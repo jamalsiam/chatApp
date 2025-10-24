@@ -1,16 +1,76 @@
-// App.js
-import React, { useState, useEffect } from 'react';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import authService from './src/services/authService';
 
-// Import screens
+// Auth Screens
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
-import HomeScreen from './src/screens/HomeScreen';
+
+// Main App Screens
+import AlbumScreen from './src/screens/AlbumScreen';
+import CallsScreen from './src/screens/CallsScreen';
+import ChatListScreen from './src/screens/ChatListScreen';
+import FeedScreen from './src/screens/FeedScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 
 const Stack = createStackNavigator();
+const Tab = createBottomTabNavigator();
+
+// Bottom Tab Navigator
+function HomeTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+
+          switch (route.name) {
+            case 'Chats':
+              iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
+              break;
+            case 'Calls':
+              iconName = focused ? 'call' : 'call-outline';
+              break;
+            case 'Feed':
+              iconName = focused ? 'play-circle' : 'play-circle-outline';
+              break;
+            case 'Album':
+              iconName = focused ? 'images' : 'images-outline';
+              break;
+            case 'Profile':
+              iconName = focused ? 'person' : 'person-outline';
+              break;
+          }
+
+          return <Icon name={iconName} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: '#6C5CE7',
+        tabBarInactiveTintColor: '#888',
+        tabBarStyle: {
+          backgroundColor: '#2A2A2A',
+          borderTopWidth: 0,
+          height: 60,
+          paddingBottom: 8,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
+        },
+        headerShown: false,
+      })}
+    >
+      <Tab.Screen name="Chats" component={ChatListScreen} />
+      <Tab.Screen name="Calls" component={CallsScreen} />
+      <Tab.Screen name="Feed" component={FeedScreen} />
+      <Tab.Screen name="Album" component={AlbumScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -42,7 +102,7 @@ export default function App() {
             <Stack.Screen name="Register" component={RegisterScreen} />
           </>
         ) : (
-          <Stack.Screen name="Home" component={HomeScreen} />
+          <Stack.Screen name="Home" component={HomeTabs} />
         )}
       </Stack.Navigator>
     </NavigationContainer>
