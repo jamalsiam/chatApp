@@ -2,7 +2,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import authService from './src/services/authService';
 
@@ -14,6 +14,7 @@ import RegisterScreen from './src/screens/RegisterScreen';
 import AlbumScreen from './src/screens/AlbumScreen';
 import CallsScreen from './src/screens/CallsScreen';
 import ChatListScreen from './src/screens/ChatListScreen';
+import ChatRoomScreen from './src/screens/ChatRoomScreen';
 import FeedScreen from './src/screens/FeedScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import SearchUsersScreen from './src/screens/SearchUsersScreen';
@@ -21,20 +22,7 @@ import SearchUsersScreen from './src/screens/SearchUsersScreen';
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Placeholder Chat Room Component (for now)
-function ChatRoomPlaceholder() {
-  return (
-    <View style={{ flex: 1, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center' }}>
-      <Icon name="chatbubbles" size={80} color="#6C5CE7" />
-      <Text style={{ color: '#fff', fontSize: 20, marginTop: 20, fontWeight: 'bold' }}>
-        Chat Room
-      </Text>
-      <Text style={{ color: '#888', fontSize: 14, marginTop: 10 }}>
-        Coming up
-      </Text>
-    </View>
-  );
-}
+
 
 // Bottom Tab Navigator
 function HomeTabs() {
@@ -104,11 +92,11 @@ export default function App() {
 
   if (loading) {
     return (
-      <View style={{ 
-        flex: 1, 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        backgroundColor: '#1A1A1A' 
+      <View style={{
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#1A1A1A'
       }}>
         <ActivityIndicator size="large" color="#6C5CE7" />
       </View>
@@ -129,7 +117,7 @@ export default function App() {
           <>
             <Stack.Screen name="Home" component={HomeTabs} />
             <Stack.Screen name="SearchUsers" component={SearchUsersScreen} />
-            <Stack.Screen name="ChatRoom" component={ChatRoomPlaceholder} />
+            <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
           </>
         )}
       </Stack.Navigator>
