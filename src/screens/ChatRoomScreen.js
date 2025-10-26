@@ -1,7 +1,10 @@
 import { format } from 'date-fns';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     FlatList,
     Image,
@@ -89,9 +92,179 @@ export default function ChatRoomScreen({ route, navigation }) {
             .substring(0, 2);
     };
 
+    const handleImagePick = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission needed', 'We need permission to access your photos');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'], // Fixed: Use array instead of MediaTypeOptions
+            quality: 0.8,
+            allowsEditing: false,
+        });
+
+        if (!result.canceled) {
+            if (userBalance < 1) {
+                Alert.alert('Insufficient Coins', 'You need at least 1 coin to send media');
+                return;
+            }
+
+            setSending(true);
+            
+            try {
+                let imageUri = result.assets[0].uri;
+                
+                // Convert HEIC/HEIF to JPEG if needed
+                if (imageUri.toLowerCase().endsWith('.heic') || 
+                    imageUri.toLowerCase().endsWith('.heif')) {
+                  
+                    const manipResult = await ImageManipulator.manipulateAsync(
+                        imageUri,
+                        [],
+                        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+                    );
+                    imageUri = manipResult.uri;
+                   
+                }
+                
+                const sendResult = await chatService.sendMediaMessage(
+                    chatId,
+                    currentUser.uid,
+                    otherUser.id,
+                    imageUri,
+                    'image'
+                );
+                
+                if (!sendResult.success) {
+                    Alert.alert('Error', sendResult.error);
+                } else {
+                    setUserBalance(prev => prev - 1);
+                }
+            } catch (error) {
+                console.error('Error sending image:', error);
+                Alert.alert('Error', 'Failed to send image');
+            } finally {
+                setSending(false);
+            }
+        }
+    };
+
+    const handleVideoPick = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission needed', 'We need permission to access your videos');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['videos'], // Fixed: Use array instead of MediaTypeOptions
+            quality: 0.8,
+            allowsEditing: false,
+        });
+
+        if (!result.canceled) {
+            if (userBalance < 1) {
+                Alert.alert('Insufficient Coins', 'You need at least 1 coin to send media');
+                return;
+            }
+
+            setSending(true);
+            const sendResult = await chatService.sendMediaMessage(
+                chatId,
+                currentUser.uid,
+                otherUser.id,
+                result.assets[0].uri,
+                'video'
+            );
+            setSending(false);
+
+            if (!sendResult.success) {
+                Alert.alert('Error', sendResult.error);
+            } else {
+                setUserBalance(prev => prev - 1);
+            }
+        }
+    };
+
+    const handleTakePhoto = async () => {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permission needed', 'We need camera permission');
+            return;
+        }
+
+        const result = await ImagePicker.launchCameraAsync({
+            quality: 0.8,
+            allowsEditing: false,
+        });
+
+        if (!result.canceled) {
+            if (userBalance < 1) {
+                Alert.alert('Insufficient Coins', 'You need at least 1 coin to send media');
+                return;
+            }
+
+            setSending(true);
+            
+            try {
+                let imageUri = result.assets[0].uri;
+                
+                // Convert HEIC/HEIF to JPEG if needed
+                if (imageUri.toLowerCase().endsWith('.heic') || 
+                    imageUri.toLowerCase().endsWith('.heif')) {
+                   
+                    const manipResult = await ImageManipulator.manipulateAsync(
+                        imageUri,
+                        [],
+                        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+                    );
+                    imageUri = manipResult.uri;
+                    
+                }
+                
+                const sendResult = await chatService.sendMediaMessage(
+                    chatId,
+                    currentUser.uid,
+                    otherUser.id,
+                    imageUri,
+                    'image'
+                );
+                
+                if (!sendResult.success) {
+                    Alert.alert('Error', sendResult.error);
+                } else {
+                    setUserBalance(prev => prev - 1);
+                }
+            } catch (error) {
+                console.error('Error sending photo:', error);
+                Alert.alert('Error', 'Failed to send photo');
+            } finally {
+                setSending(false);
+            }
+        }
+    };
+
+    const handleMediaOptions = () => {
+        Alert.alert(
+            'Send Media',
+            'Choose an option',
+            [
+                { text: 'Take Photo', onPress: handleTakePhoto },
+                { text: 'Choose Image', onPress: handleImagePick },
+                { text: 'Choose Video', onPress: handleVideoPick },
+                { text: 'Cancel', style: 'cancel' }
+            ]
+        );
+    };
+
     const renderMessage = ({ item }) => {
         const isMyMessage = item.senderId === currentUser.uid;
         const messageTime = item.timestamp?.toDate?.();
+        const hasMedia = item.mediaUrl && item.mediaType;
+
+     
 
         return (
             <View style={[
@@ -112,22 +285,55 @@ export default function ChatRoomScreen({ route, navigation }) {
 
                 <View style={[
                     styles.messageBubble,
-                    isMyMessage ? styles.myMessageBubble : styles.theirMessageBubble
+                    isMyMessage ? styles.myMessageBubble : styles.theirMessageBubble,
+                    hasMedia && styles.mediaBubble
                 ]}>
-                    <Text style={[
-                        styles.messageText,
-                        isMyMessage ? styles.myMessageText : styles.theirMessageText
-                    ]}>
-                        {item.message}
-                    </Text>
-                    {messageTime && (
+                    {hasMedia ? (
+                        <TouchableOpacity
+                            onPress={() => navigation.navigate('MediaViewer', {
+                                mediaUrl: item.mediaUrl,
+                                mediaType: item.mediaType
+                            })}
+                        >
+                            {item.mediaType === 'image' ? (
+                                <Image
+                                    source={{ uri: item.mediaUrl }}
+                                    style={styles.mediaPreview}
+                                    resizeMode="cover"
+                                    
+                                    onError={(error) => {
+                                     
+                                    }}
+                                />
+                            ) : (
+                                <View style={styles.videoPreview}>
+                                    <Image
+                                        source={{ uri: item.mediaUrl }}
+                                        style={styles.mediaPreview}
+                                        resizeMode="cover"
+                                    />
+                                    <View style={styles.playIconOverlay}>
+                                        <Icon name="play-circle" size={50} color="#fff" />
+                                    </View>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    ) : (
                         <Text style={[
-                            styles.messageTime,
-                            isMyMessage ? styles.myMessageTime : styles.theirMessageTime
+                            styles.messageText,
+                            isMyMessage ? styles.myMessageText : styles.theirMessageText
                         ]}>
-                            {format(messageTime, 'HH:mm')}
+                            {item.message}
                         </Text>
                     )}
+
+                    <Text style={[
+                        styles.messageTime,
+                        isMyMessage ? styles.myMessageTime : styles.theirMessageTime
+                    ]}>
+                        {messageTime ? format(messageTime, 'HH:mm') : ''}
+                        {isMyMessage && item.read && ' ✓✓'}
+                    </Text>
                 </View>
             </View>
         );
@@ -137,7 +343,7 @@ export default function ChatRoomScreen({ route, navigation }) {
         <KeyboardAvoidingView
             style={styles.container}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            keyboardVerticalOffset={90}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
             {/* Header */}
             <View style={styles.header}>
@@ -185,8 +391,24 @@ export default function ChatRoomScreen({ route, navigation }) {
                 />
             )}
 
+            {/* Sending indicator */}
+            {sending && (
+                <View style={styles.sendingIndicator}>
+                    <ActivityIndicator color="#6C5CE7" />
+                    <Text style={styles.sendingText}>Sending...</Text>
+                </View>
+            )}
+
             {/* Input Bar */}
             <View style={styles.inputContainer}>
+                <TouchableOpacity
+                    style={styles.attachButton}
+                    onPress={handleMediaOptions}
+                    disabled={sending}
+                >
+                    <Icon name="add-circle" size={28} color={sending ? "#444" : "#6C5CE7"} />
+                </TouchableOpacity>
+
                 <TextInput
                     style={styles.input}
                     placeholder="Type a message..."
@@ -195,7 +417,9 @@ export default function ChatRoomScreen({ route, navigation }) {
                     onChangeText={setNewMessage}
                     multiline
                     maxLength={500}
+                    editable={!sending}
                 />
+
                 <TouchableOpacity
                     style={[styles.sendButton, (!newMessage.trim() || sending) && styles.sendButtonDisabled]}
                     onPress={handleSend}
@@ -395,5 +619,39 @@ const styles = StyleSheet.create({
         color: '#FFD700',
         marginTop: 15,
         fontWeight: '600',
+    },
+    attachButton: {
+        marginRight: 10,
+    },
+    mediaBubble: {
+        padding: 4,
+    },
+    mediaPreview: {
+        width: 200,
+        height: 200,
+        borderRadius: 12,
+        backgroundColor: '#333', // Placeholder color while loading
+    },
+    videoPreview: {
+        position: 'relative',
+    },
+    playIconOverlay: {
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        marginTop: -25,
+        marginLeft: -25,
+    },
+    sendingIndicator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+        backgroundColor: '#2A2A2A',
+    },
+    sendingText: {
+        marginLeft: 8,
+        color: '#888',
+        fontSize: 12,
     },
 });

@@ -12,7 +12,24 @@ import {
   updateDoc,
   where
 } from 'firebase/firestore';
+import { Platform } from 'react-native';
 import { db } from '../config/firebase';
+
+// Configuration for your local server
+// IMPORTANT: Replace YOUR_LOCAL_IP with your actual IP address!
+const LOCAL_SERVER_CONFIG = {
+  // Platform-specific URLs for different environments
+  uploadUrl: Platform.select({
+    ios: 'http://localhost:3000/upload',           // iOS Simulator
+    android: 'http://10.0.2.2:3000/upload',        // Android Emulator
+    default: 'http://192.168.1.100:3000/upload'    // Real Device - CHANGE THIS!
+  }),
+  mediaBaseUrl: Platform.select({
+    ios: 'http://localhost:3000/media',            // iOS Simulator
+    android: 'http://10.0.2.2:3000/media',         // Android Emulator
+    default: 'http://192.168.1.100:3000/media'     // Real Device - CHANGE THIS!
+  })
+};
 
 class ChatService {
   // Get or Create Chat Room
@@ -85,6 +102,152 @@ class ChatService {
     }
   }
 
+  // Upload Media to Local Server
+  async uploadMedia(uri, chatId) {
+    try {
+      
+
+      // Create form data
+      const formData = new FormData();
+      
+      // Get file extension from URI
+      const uriParts = uri.split('.');
+      const fileType = uriParts[uriParts.length - 1].toLowerCase();
+      
+     
+      
+      // Determine MIME type
+      let mimeType = 'image/jpeg'; // default
+      if (fileType === 'png') {
+        mimeType = 'image/png';
+      } else if (fileType === 'gif') {
+        mimeType = 'image/gif';
+      } else if (fileType === 'heic' || fileType === 'heif') {
+        mimeType = 'image/heic';
+      } else if (['mp4', 'mov', 'avi', 'webm', 'm4v', '3gp'].includes(fileType)) {
+        mimeType = `video/${fileType === 'mov' ? 'quicktime' : fileType}`;
+      }
+      
+ 
+      
+      // Create file name
+      const fileName = `${Date.now()}.${fileType}`;
+      
+      // Append file to form data (React Native format)
+      formData.append('file', {
+        uri: uri,
+        type: mimeType,
+        name: fileName,
+      });
+      
+      // Add metadata
+      formData.append('chatId', chatId);
+      formData.append('timestamp', Date.now().toString());
+
+    
+      // Upload to local server with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+      try {
+        const response = await fetch(LOCAL_SERVER_CONFIG.uploadUrl, {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'Accept': 'application/json',
+          },
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+    
+
+        const responseText = await response.text();
+        
+
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.status} - ${responseText}`);
+        }
+
+        const result = JSON.parse(responseText);
+       
+        
+        // Get the media URL
+        const mediaUrl = result.url || `${LOCAL_SERVER_CONFIG.mediaBaseUrl}/${chatId}/${result.filename}`;
+        
+        return mediaUrl;
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Upload timeout - check if server is running');
+        }
+        throw fetchError;
+      }
+    } catch (error) {
+       
+      throw error;
+    }
+  }
+
+  // Send Media Message
+  async sendMediaMessage(chatId, senderId, receiverId, mediaUri, mediaType) {
+    try {
+     
+      // Check if sender has enough coins
+      const senderDoc = await getDoc(doc(db, 'users', senderId));
+      const senderData = senderDoc.data();
+
+      if (senderData.balanceCoins < 1) {
+     
+        return { success: false, error: 'Insufficient coins' };
+      }
+
+      
+
+      // Upload media to local server
+      const mediaUrl = await this.uploadMedia(mediaUri, chatId);
+     
+      // Deduct 1 coin from sender
+      await updateDoc(doc(db, 'users', senderId), {
+        balanceCoins: increment(-1)
+      });
+
+      // Add 1 coin to receiver
+      await updateDoc(doc(db, 'users', receiverId), {
+        balanceCoins: increment(1)
+      });
+ 
+
+      // Add message with media
+      const messageData = {
+        chatId,
+        senderId,
+        receiverId,
+        message: '',
+        mediaUrl,
+        mediaType, // 'image' or 'video'
+        timestamp: serverTimestamp(),
+        read: false
+      };
+ 
+
+      await addDoc(collection(db, 'messages'), messageData);
+
+      // Update chat with last message
+      await updateDoc(doc(db, 'chats', chatId), {
+        lastMessage: mediaType === 'image' ? '📷 Photo' : '🎥 Video',
+        lastMessageTime: serverTimestamp(),
+        [`unreadCount.${receiverId}`]: increment(1)
+      });
+ 
+      return { success: true };
+    } catch (error) {
+      
+      return { success: false, error: error.message };
+    }
+  }
+
   // Listen to Messages
   listenToMessages(chatId, callback) {
     const q = query(
@@ -96,7 +259,8 @@ class ChatService {
     return onSnapshot(q, (snapshot) => {
       const messages = [];
       snapshot.forEach((doc) => {
-        messages.push({ id: doc.id, ...doc.data() });
+        const data = doc.data();
+        messages.push({ id: doc.id, ...data });
       });
       callback(messages);
     });

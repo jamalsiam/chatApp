@@ -15,14 +15,15 @@ import AlbumScreen from './src/screens/AlbumScreen';
 import CallsScreen from './src/screens/CallsScreen';
 import ChatListScreen from './src/screens/ChatListScreen';
 import ChatRoomScreen from './src/screens/ChatRoomScreen';
+import EditProfileScreen from './src/screens/EditProfileScreen';
 import FeedScreen from './src/screens/FeedScreen';
+import FollowersListScreen from './src/screens/FollowersListScreen';
+import MediaViewerScreen from './src/screens/MediaViewerScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import SearchUsersScreen from './src/screens/SearchUsersScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
-
-
 
 // Bottom Tab Navigator
 function HomeTabs() {
@@ -92,12 +93,14 @@ export default function App() {
 
   if (loading) {
     return (
-      <View style={{
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#1A1A1A'
-      }}>
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: '#1A1A1A',
+        }}
+      >
         <ActivityIndicator size="large" color="#6C5CE7" />
       </View>
     );
@@ -118,6 +121,9 @@ export default function App() {
             <Stack.Screen name="Home" component={HomeTabs} />
             <Stack.Screen name="SearchUsers" component={SearchUsersScreen} />
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
+            <Stack.Screen name="MediaViewer" component={MediaViewerScreen} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+            <Stack.Screen name="FollowersList" component={FollowersListScreen} />
           </>
         )}
       </Stack.Navigator>
