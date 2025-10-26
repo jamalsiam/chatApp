@@ -1,10 +1,11 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import authService from './src/services/authService';
+import notificationService from './src/services/NotificationService';
 
 // Auth Screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -19,6 +20,7 @@ import EditProfileScreen from './src/screens/EditProfileScreen';
 import FeedScreen from './src/screens/FeedScreen';
 import FollowersListScreen from './src/screens/FollowersListScreen';
 import MediaViewerScreen from './src/screens/MediaViewerScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import SearchUsersScreen from './src/screens/SearchUsersScreen';
 
@@ -80,16 +82,55 @@ function HomeTabs() {
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const navigationRef = useRef();
 
   useEffect(() => {
     // Listen to auth state changes
-    const unsubscribe = authService.onAuthStateChanged((user) => {
+    const unsubscribe = authService.onAuthStateChanged(async (user) => {
       setIsAuthenticated(!!user);
+      
+      // Initialize notifications when user logs in
+      if (user) {
+        const result = await notificationService.initialize(user.uid);
+        if (result.success) {
+          console.log('✅ Notifications initialized');
+        }
+      }
+      
       setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      notificationService.removeListeners();
+    };
   }, []);
+
+  // Handle notification tap navigation
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const interval = setInterval(() => {
+      if (notificationService.onNotificationTap && navigationRef.current) {
+        const data = notificationService.onNotificationTap;
+        
+        // Navigate based on notification type
+        if (data.type === 'message' && data.chatId) {
+          navigationRef.current.navigate('ChatRoom', {
+            chatId: data.chatId,
+            otherUser: { id: data.senderId }
+          });
+        } else if (data.type === 'follow' && data.userId) {
+          navigationRef.current.navigate('Profile', { userId: data.userId });
+        }
+        
+        // Clear notification tap data
+        notificationService.onNotificationTap = null;
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
 
   if (loading) {
     return (
@@ -107,7 +148,7 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           // Auth Stack
@@ -124,6 +165,7 @@ export default function App() {
             <Stack.Screen name="MediaViewer" component={MediaViewerScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="FollowersList" component={FollowersListScreen} />
+            <Stack.Screen name="Notifications" component={NotificationsScreen} />
           </>
         )}
       </Stack.Navigator>

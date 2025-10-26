@@ -16,6 +16,7 @@ import {
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { Platform } from 'react-native';
 import { db, storage } from '../config/firebase';
+import notificationService from './NotificationService';
 
 // Local server configuration for gallery posts
 const LOCAL_SERVER_CONFIG = {
@@ -36,7 +37,7 @@ class UserService {
   async getUserProfile(userId) {
     try {
       const userDoc = await getDoc(doc(db, 'users', userId));
-      
+
       if (userDoc.exists()) {
         const userData = userDoc.data();
         return {
@@ -59,18 +60,18 @@ class UserService {
   async updateUserProfile(userId, updates) {
     try {
       const userRef = doc(db, 'users', userId);
-      
+
       const allowedUpdates = {};
       if (updates.displayName !== undefined) allowedUpdates.displayName = updates.displayName;
       if (updates.bio !== undefined) allowedUpdates.bio = updates.bio;
       if (updates.photoURL !== undefined) allowedUpdates.photoURL = updates.photoURL;
-      
+
       await updateDoc(userRef, {
         ...allowedUpdates,
         updatedAt: serverTimestamp()
       });
-      
-      
+
+
       return { success: true };
     } catch (error) {
       console.error('❌ Error updating profile:', error);
@@ -81,7 +82,7 @@ class UserService {
   // Upload profile photo (to Firebase Storage)
   async uploadProfilePhoto(userId, imageUri) {
     try {
-    
+
 
       const filename = `profile_${userId}_${Date.now()}.jpg`;
       const storageRef = ref(storage, `profile_photos/${filename}`);
@@ -91,11 +92,11 @@ class UserService {
 
       await uploadBytes(storageRef, blob);
       const downloadURL = await getDownloadURL(storageRef);
-      
-   
+
+
       return downloadURL;
     } catch (error) {
- 
+
       throw error;
     }
   }
@@ -107,33 +108,33 @@ class UserService {
   // Upload gallery post to LOCAL SERVER
   async uploadGalleryPost(userId, mediaUri, mediaType) {
     try {
-   
+
 
       // Create form data
       const formData = new FormData();
-      
+
       const uriParts = mediaUri.split('.');
       const fileType = uriParts[uriParts.length - 1].toLowerCase();
-      
+
       let mimeType = mediaType === 'video' ? `video/${fileType}` : `image/${fileType}`;
       if (fileType === 'jpg' || fileType === 'jpeg') {
         mimeType = 'image/jpeg';
       } else if (fileType === 'png') {
         mimeType = 'image/png';
       }
-      
+
       const fileName = `${Date.now()}.${fileType}`;
-      
+
       formData.append('file', {
         uri: mediaUri,
         type: mimeType,
         name: fileName,
       });
-      
+
       formData.append('userId', userId);
       formData.append('timestamp', Date.now().toString());
 
-     
+
 
       const response = await fetch(LOCAL_SERVER_CONFIG.uploadUrl, {
         method: 'POST',
@@ -150,8 +151,8 @@ class UserService {
 
       const result = await response.json();
       const mediaUrl = result.url;
-      
-     
+
+
 
       // Save post reference in Firestore
       const postData = {
@@ -162,7 +163,7 @@ class UserService {
       };
 
       const postRef = await addDoc(collection(db, 'gallery_posts'), postData);
-      
+
       return {
         success: true,
         postId: postRef.id,
@@ -177,24 +178,24 @@ class UserService {
   // Get user's gallery posts
   async getUserGalleryPosts(userId) {
     try {
- 
+
       const postsRef = collection(db, 'gallery_posts');
       const q = query(
         postsRef,
         where('userId', '==', userId),
         orderBy('createdAt', 'desc')
       );
-      
+
       const snapshot = await getDocs(q);
       const posts = [];
-      
+
       snapshot.forEach((doc) => {
         posts.push({
           id: doc.id,
           ...doc.data()
         });
       });
-   
+
       return posts;
     } catch (error) {
       console.error('Error getting gallery posts:', error);
@@ -207,14 +208,14 @@ class UserService {
     try {
       // Delete from Firestore
       await deleteDoc(doc(db, 'gallery_posts', postId));
-      
+
       // Optionally: Delete from server
       // You can add a DELETE endpoint to your server
-      
-     
+
+
       return { success: true };
     } catch (error) {
-    
+
       return { success: false, error: error.message };
     }
   }
@@ -235,10 +236,10 @@ class UserService {
       await updateDoc(targetUserRef, {
         followers: arrayUnion(currentUserId)
       });
- 
+
       return { success: true };
     } catch (error) {
- 
+
       return { success: false, error: error.message };
     }
   }
@@ -256,10 +257,10 @@ class UserService {
         followers: arrayRemove(currentUserId)
       });
 
-     
+
       return { success: true };
     } catch (error) {
-     
+
       return { success: false, error: error.message };
     }
   }
@@ -283,7 +284,7 @@ class UserService {
       const userDoc = await getDoc(doc(db, 'users', userId));
       if (userDoc.exists()) {
         const followers = userDoc.data().followers || [];
-        
+
         const followerDetails = await Promise.all(
           followers.map(async (followerId) => {
             const followerDoc = await getDoc(doc(db, 'users', followerId));
@@ -293,12 +294,12 @@ class UserService {
             return null;
           })
         );
-        
+
         return followerDetails.filter(f => f !== null);
       }
       return [];
     } catch (error) {
-      
+
       return [];
     }
   }
@@ -308,7 +309,7 @@ class UserService {
       const userDoc = await getDoc(doc(db, 'users', userId));
       if (userDoc.exists()) {
         const following = userDoc.data().following || [];
-        
+
         const followingDetails = await Promise.all(
           following.map(async (followingId) => {
             const followingDoc = await getDoc(doc(db, 'users', followingId));
@@ -318,7 +319,7 @@ class UserService {
             return null;
           })
         );
-        
+
         return followingDetails.filter(f => f !== null);
       }
       return [];
@@ -333,13 +334,13 @@ class UserService {
     try {
       const usersRef = collection(db, 'users');
       const snapshot = await getDocs(usersRef);
-      
+
       const users = [];
       snapshot.forEach((doc) => {
         const userData = doc.data();
         const displayName = userData.displayName || '';
         const email = userData.email || '';
-        
+
         if (
           displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
           email.toLowerCase().includes(searchTerm.toLowerCase())
@@ -347,7 +348,7 @@ class UserService {
           users.push({ id: doc.id, ...userData });
         }
       });
-      
+
       return users;
     } catch (error) {
       console.error('Error searching users:', error);
@@ -360,22 +361,61 @@ class UserService {
     try {
       const userRef = doc(db, 'users', userId);
       const userDoc = await getDoc(userRef);
-      
+
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        
+
         const updates = {};
         if (!userData.bio) updates.bio = '';
         if (!userData.followers) updates.followers = [];
         if (!userData.following) updates.following = [];
-        
+
         if (Object.keys(updates).length > 0) {
           await updateDoc(userRef, updates);
-        
+
         }
       }
     } catch (error) {
-      
+
+    }
+  }
+  async followUser(currentUserId, targetUserId) {
+    try {
+      const currentUserRef = doc(db, 'users', currentUserId);
+      const targetUserRef = doc(db, 'users', targetUserId);
+
+      await updateDoc(currentUserRef, {
+        following: arrayUnion(targetUserId)
+      });
+
+      await updateDoc(targetUserRef, {
+        followers: arrayUnion(currentUserId)
+      });
+
+
+      await notificationService.sendFollowNotification(currentUserId, targetUserId);
+
+
+      return { success: true };
+    } catch (error) {
+
+      return { success: false, error: error.message };
+    }
+  }
+  async getAllUsers() {
+    try {
+      const usersRef = collection(db, 'users');
+      const snapshot = await getDocs(usersRef);
+
+      const users = [];
+      snapshot.forEach((doc) => {
+        users.push({ id: doc.id, ...doc.data() });
+      });
+
+      return users;
+    } catch (error) {
+      console.error('Error getting users:', error);
+      return [];
     }
   }
 }
