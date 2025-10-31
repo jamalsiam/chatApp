@@ -54,7 +54,6 @@ export default function SearchUsersScreen({ navigation }) {
         otherUser: user
       });
     } catch (error) {
-      console.error('Error creating chat:', error);
     }
   };
 

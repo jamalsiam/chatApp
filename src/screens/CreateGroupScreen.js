@@ -41,7 +41,6 @@ export default function CreateGroupScreen({ navigation }) {
             });
             setUsers(usersList);
         } catch (error) {
-            console.error('Error loading users:', error);
         } finally {
             setLoading(false);
         }

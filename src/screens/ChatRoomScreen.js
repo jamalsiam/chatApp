@@ -1,7 +1,7 @@
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -29,6 +29,7 @@ export default function ChatRoomScreen({ route, navigation }) {
     const [userBalance, setUserBalance] = useState(0);
     const [editingMessage, setEditingMessage] = useState(null);
     const [replyingTo, setReplyingTo] = useState(null);
+    const [otherUserData, setOtherUserData] = useState(otherUser);
     const flatListRef = useRef(null);
     const currentUser = authService.getCurrentUser();
 
@@ -38,14 +39,31 @@ export default function ChatRoomScreen({ route, navigation }) {
             setMessages(msgs);
         });
 
-        // Mark messages as read
+        // Mark messages as read in chat list
         chatService.markAsRead(chatId, currentUser.uid);
+
+        // Mark individual messages as seen
+        chatService.markMessagesAsSeen(chatId, currentUser.uid);
 
         // Get user balance
         loadUserBalance();
 
         return () => unsubscribe();
     }, [chatId]);
+
+    // Listen to other user's online status and last seen
+    useEffect(() => {
+        if (!otherUser?.id) return;
+
+        const userRef = doc(db, 'users', otherUser.id);
+        const unsubscribe = onSnapshot(userRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setOtherUserData({ id: docSnap.id, ...docSnap.data() });
+            }
+        });
+
+        return () => unsubscribe();
+    }, [otherUser?.id]);
 
     const loadUserBalance = async () => {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -261,7 +279,6 @@ export default function ChatRoomScreen({ route, navigation }) {
                     setUserBalance(prev => prev - 1);
                 }
             } catch (error) {
-                console.error('Error sending image:', error);
                 Alert.alert('Error', 'Failed to send image');
             } finally {
                 setSending(false);
@@ -356,7 +373,6 @@ export default function ChatRoomScreen({ route, navigation }) {
                     setUserBalance(prev => prev - 1);
                 }
             } catch (error) {
-                console.error('Error sending photo:', error);
                 Alert.alert('Error', 'Failed to send photo');
             } finally {
                 setSending(false);
@@ -484,14 +500,23 @@ export default function ChatRoomScreen({ route, navigation }) {
                         )}
 
                         {/* Time and Status */}
-                        <Text style={[
-                            styles.messageTime,
-                            isMyMessage ? styles.myMessageTime : styles.theirMessageTime
-                        ]}>
-                            {messageTime ? format(messageTime, 'HH:mm') : ''}
-                            {item.edited && ' (edited)'}
-                            {isMyMessage && item.read && ' ✓✓'}
-                        </Text>
+                        <View style={styles.timeRow}>
+                            <Text style={[
+                                styles.messageTime,
+                                isMyMessage ? styles.myMessageTime : styles.theirMessageTime
+                            ]}>
+                                {messageTime ? format(messageTime, 'HH:mm') : ''}
+                                {item.edited && ' (edited)'}
+                            </Text>
+                            {isMyMessage && (
+                                <Text style={[
+                                    styles.seenIndicator,
+                                    item.read && styles.seenIndicatorRead
+                                ]}>
+                                    {item.read ? '✓✓' : '✓'}
+                                </Text>
+                            )}
+                        </View>
                     </View>
 
                     {/* Reactions */}
@@ -533,17 +558,23 @@ export default function ChatRoomScreen({ route, navigation }) {
                 </TouchableOpacity>
 
                 <View style={styles.headerCenter}>
-                    {otherUser.photoURL ? (
-                        <Image source={{ uri: otherUser.photoURL }} style={styles.headerAvatar} />
+                    {otherUserData.photoURL ? (
+                        <Image source={{ uri: otherUserData.photoURL }} style={styles.headerAvatar} />
                     ) : (
                         <View style={styles.headerAvatarPlaceholder}>
-                            <Text style={styles.headerAvatarText}>{getInitials(otherUser.displayName)}</Text>
+                            <Text style={styles.headerAvatarText}>{getInitials(otherUserData.displayName)}</Text>
                         </View>
                     )}
                     <View style={styles.headerInfo}>
-                        <Text style={styles.headerName}>{otherUser.displayName}</Text>
+                        <Text style={styles.headerName}>{otherUserData.displayName}</Text>
                         <Text style={styles.headerStatus}>
-                            {otherUser.isOnline ? 'Online' : 'Offline'}
+                            {otherUserData.isOnline ? (
+                                'Online'
+                            ) : otherUserData.lastSeen?.toDate ? (
+                                `Last seen ${formatDistanceToNow(otherUserData.lastSeen.toDate(), { addSuffix: true })}`
+                            ) : (
+                                'Offline'
+                            )}
                         </Text>
                     </View>
                 </View>
@@ -768,16 +799,28 @@ const styles = StyleSheet.create({
     theirMessageText: {
         color: '#fff',
     },
+    timeRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        marginTop: 4,
+    },
     messageTime: {
         fontSize: 10,
-        marginTop: 4,
     },
     myMessageTime: {
         color: '#E0E0E0',
-        textAlign: 'right',
     },
     theirMessageTime: {
         color: '#888',
+    },
+    seenIndicator: {
+        fontSize: 10,
+        marginLeft: 4,
+        color: '#888',
+    },
+    seenIndicatorRead: {
+        color: '#4A9EFF',
     },
     inputContainer: {
         flexDirection: 'row',

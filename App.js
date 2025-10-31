@@ -2,8 +2,10 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, AppState, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { db } from './src/config/firebase';
 import authService from './src/services/authService';
 import notificationService from './src/services/NotificationService';
 
@@ -84,15 +86,20 @@ export default function App() {
     // Listen to auth state changes
     const unsubscribe = authService.onAuthStateChanged(async (user) => {
       setIsAuthenticated(!!user);
-      
+
       // Initialize notifications when user logs in
       if (user) {
         const result = await notificationService.initialize(user.uid);
         if (result.success) {
-          console.log('✅ Notifications initialized');
         }
+
+        // Set user as online
+        await setDoc(doc(db, 'users', user.uid), {
+          isOnline: true,
+          lastSeen: serverTimestamp()
+        }, { merge: true });
       }
-      
+
       setLoading(false);
     });
 
@@ -101,6 +108,34 @@ export default function App() {
       notificationService.removeListeners();
     };
   }, []);
+
+  // Track app state for online/offline status
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const subscription = AppState.addEventListener('change', async (nextAppState) => {
+      const user = authService.getCurrentUser();
+      if (!user) return;
+
+      if (nextAppState === 'active') {
+        // App came to foreground - set online
+        await setDoc(doc(db, 'users', user.uid), {
+          isOnline: true,
+          lastSeen: serverTimestamp()
+        }, { merge: true });
+      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // App went to background - set offline
+        await setDoc(doc(db, 'users', user.uid), {
+          isOnline: false,
+          lastSeen: serverTimestamp()
+        }, { merge: true });
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isAuthenticated]);
 
   // Handle notification tap navigation
   useEffect(() => {

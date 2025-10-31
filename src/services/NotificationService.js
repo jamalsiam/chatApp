@@ -37,14 +37,12 @@ class NotificationService {
   // Initialize push notifications
   async initialize(userId) {
     try {
-      console.log('🔔 Initializing push notifications...');
 
       // Request permissions
       const token = await this.registerForPushNotifications();
       
       if (token) {
         this.expoPushToken = token;
-        console.log('✅ Push token:', token);
 
         // Save token to user profile
         await this.saveTokenToUser(userId, token);
@@ -57,7 +55,6 @@ class NotificationService {
 
       return { success: false, error: 'No token received' };
     } catch (error) {
-      console.error('❌ Error initializing notifications:', error);
       return { success: false, error: error.message };
     }
   }
@@ -66,7 +63,6 @@ class NotificationService {
   async registerForPushNotifications() {
     try {
       if (!Device.isDevice) {
-        console.log('⚠️ Must use physical device for Push Notifications');
         return null;
       }
 
@@ -81,7 +77,6 @@ class NotificationService {
       }
 
       if (finalStatus !== 'granted') {
-        console.log('❌ Permission not granted for push notifications');
         return null;
       }
 
@@ -89,7 +84,6 @@ class NotificationService {
       const projectId = Constants.expoConfig?.extra?.eas?.projectId || 
                        Constants.easConfig?.projectId;
 
-      console.log('📱 Project ID:', projectId);
 
       // Get Expo push token with project ID
       let tokenData;
@@ -99,11 +93,9 @@ class NotificationService {
         });
       } else {
         // Fallback: Try without projectId (works for Expo Go)
-        console.log('⚠️ No project ID found, trying without it...');
         tokenData = await Notifications.getExpoPushTokenAsync();
       }
 
-      console.log('✅ Expo Push Token:', tokenData.data);
 
       // Android specific channel setup
       if (Platform.OS === 'android') {
@@ -117,7 +109,6 @@ class NotificationService {
 
       return tokenData.data;
     } catch (error) {
-      console.error('❌ Error getting push token:', error);
       return null;
     }
   }
@@ -130,9 +121,7 @@ class NotificationService {
         pushToken: pushToken,
         pushTokenUpdatedAt: serverTimestamp()
       });
-      console.log('✅ Push token saved to user profile');
     } catch (error) {
-      console.error('Error saving push token:', error);
     }
   }
 
@@ -140,12 +129,10 @@ class NotificationService {
   setupNotificationListeners() {
     // Listener for notifications received while app is foregrounded
     this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
-      console.log('🔔 Notification received:', notification);
     });
 
     // Listener for when user taps notification
     this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('👆 Notification tapped:', response);
       // Handle navigation based on notification data
       this.handleNotificationResponse(response);
     });
@@ -154,7 +141,6 @@ class NotificationService {
   // Handle notification tap
   handleNotificationResponse(response) {
     const data = response.notification.request.content.data;
-    console.log('📱 Notification data:', data);
 
     // You can emit an event or use navigation here
     if (data.type === 'message' && data.chatId) {
@@ -169,14 +155,12 @@ class NotificationService {
       const userDoc = await getDoc(doc(db, 'users', userId));
       
       if (!userDoc.exists()) {
-        console.log('❌ User not found');
         return { success: false };
       }
 
       const pushToken = userDoc.data().pushToken;
 
       if (!pushToken) {
-        console.log('⚠️ User has no push token (notifications not enabled)');
         return { success: false };
       }
 
@@ -202,14 +186,12 @@ class NotificationService {
       });
 
       const result = await response.json();
-      console.log('✅ Notification sent:', result);
 
       // Save notification to database
       await this.saveNotificationToDatabase(userId, title, body, data);
 
       return { success: true, result };
     } catch (error) {
-      console.error('❌ Error sending notification:', error);
       return { success: false, error: error.message };
     }
   }
@@ -225,9 +207,7 @@ class NotificationService {
         read: false,
         createdAt: serverTimestamp()
       });
-      console.log('✅ Notification saved to database');
     } catch (error) {
-      console.error('Error saving notification:', error);
     }
   }
 
@@ -254,7 +234,6 @@ class NotificationService {
 
       return notifications;
     } catch (error) {
-      console.error('Error getting notifications:', error);
       return [];
     }
   }
@@ -267,9 +246,7 @@ class NotificationService {
         read: true,
         readAt: serverTimestamp()
       });
-      console.log('✅ Notification marked as read');
     } catch (error) {
-      console.error('Error marking notification as read:', error);
     }
   }
 
@@ -296,9 +273,7 @@ class NotificationService {
       });
 
       await Promise.all(updatePromises);
-      console.log('✅ All notifications marked as read');
     } catch (error) {
-      console.error('Error marking all as read:', error);
     }
   }
 
@@ -315,7 +290,6 @@ class NotificationService {
       const snapshot = await getDocs(q);
       return snapshot.size;
     } catch (error) {
-      console.error('Error getting unread count:', error);
       return 0;
     }
   }
@@ -363,7 +337,6 @@ class NotificationService {
         }
       );
     } catch (error) {
-      console.error('Error sending message notification:', error);
     }
   }
 
@@ -387,7 +360,6 @@ class NotificationService {
         }
       );
     } catch (error) {
-      console.error('Error sending follow notification:', error);
     }
   }
 
@@ -415,16 +387,13 @@ class NotificationService {
           seconds: seconds,
         },
       });
-      console.log('✅ Local notification scheduled');
     } catch (error) {
-      console.error('Error scheduling notification:', error);
     }
   }
 
   // Cancel all scheduled notifications
   async cancelAllNotifications() {
     await Notifications.cancelAllScheduledNotificationsAsync();
-    console.log('✅ All scheduled notifications cancelled');
   }
 }
 

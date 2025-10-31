@@ -52,7 +52,6 @@ export default function AlbumScreen({ navigation }) {
 
             setPosts(userPosts);
         } catch (error) {
-            console.error('Error loading posts:', error);
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -135,7 +134,6 @@ export default function AlbumScreen({ navigation }) {
                 'plain-text'
             );
         } catch (error) {
-            console.error('Error uploading:', error);
             Alert.alert('Error', 'Failed to upload media');
             setUploading(false);
         }

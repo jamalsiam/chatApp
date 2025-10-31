@@ -52,7 +52,6 @@ class ChatService {
 
       return chatId;
     } catch (error) {
-      console.error('Error creating chat room:', error);
       throw error;
     }
   }
@@ -278,7 +277,40 @@ class ChatService {
         [`unreadCount.${userId}`]: 0
       });
     } catch (error) {
-      console.error('Error marking as read:', error);
+    }
+  }
+
+  // Mark Specific Messages as Seen
+  async markMessagesAsSeen(chatId, userId) {
+    try {
+      const q = query(
+        collection(db, 'messages'),
+        where('chatId', '==', chatId),
+        where('read', '==', false)
+      );
+
+      const snapshot = await getDocs(q);
+      const updatePromises = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        // Only mark as seen if the user is not the sender
+        if (data.senderId !== userId) {
+          const messageRef = doc(db, 'messages', docSnap.id);
+          updatePromises.push(
+            updateDoc(messageRef, {
+              read: true,
+              readAt: serverTimestamp(),
+              seenBy: data.seenBy ? [...data.seenBy, userId] : [userId]
+            })
+          );
+        }
+      });
+
+      await Promise.all(updatePromises);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   }
 
@@ -322,7 +354,6 @@ class ChatService {
       });
       return { success: true };
     } catch (error) {
-      console.error('Error editing message:', error);
       return { success: false, error: error.message };
     }
   }
@@ -347,7 +378,6 @@ class ChatService {
 
       return { success: true };
     } catch (error) {
-      console.error('Error deleting message:', error);
       return { success: false, error: error.message };
     }
   }
@@ -377,7 +407,6 @@ class ChatService {
       await updateDoc(messageRef, { reactions });
       return { success: true };
     } catch (error) {
-      console.error('Error adding reaction:', error);
       return { success: false, error: error.message };
     }
   }
@@ -444,7 +473,6 @@ class ChatService {
 
       return { success: true };
     } catch (error) {
-      console.error('Error sending reply:', error);
       return { success: false, error: error.message };
     }
   }
@@ -469,7 +497,6 @@ class ChatService {
 
       return messages;
     } catch (error) {
-      console.error('Error searching messages:', error);
       return [];
     }
   }
@@ -494,7 +521,6 @@ class ChatService {
 
       return { success: true, chatId: chatRef.id };
     } catch (error) {
-      console.error('Error creating group:', error);
       return { success: false, error: error.message };
     }
   }
@@ -516,7 +542,6 @@ class ChatService {
 
       return { success: true };
     } catch (error) {
-      console.error('Error adding member:', error);
       return { success: false, error: error.message };
     }
   }
@@ -539,7 +564,6 @@ class ChatService {
 
       return { success: true };
     } catch (error) {
-      console.error('Error removing member:', error);
       return { success: false, error: error.message };
     }
   }
@@ -556,7 +580,6 @@ class ChatService {
       await updateDoc(chatRef, updates);
       return { success: true };
     } catch (error) {
-      console.error('Error updating group:', error);
       return { success: false, error: error.message };
     }
   }
@@ -670,7 +693,6 @@ class ChatService {
       }
       return { success: false, error: 'Group not found' };
     } catch (error) {
-      console.error('Error getting group info:', error);
       return { success: false, error: error.message };
     }
   }

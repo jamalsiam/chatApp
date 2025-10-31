@@ -55,7 +55,6 @@ export default function ProfileScreen({ route, navigation }) {
         setIsFollowing(following);
       }
     } catch (error) {
-      console.error('Error loading profile:', error);
       Alert.alert('Error', 'Failed to load profile');
     } finally {
       setLoading(false);
@@ -68,7 +67,6 @@ export default function ProfileScreen({ route, navigation }) {
       setGalleryPosts(posts);
      
     } catch (error) {
-      console.error('Error loading gallery posts:', error);
     }
   };
 
@@ -116,7 +114,6 @@ export default function ProfileScreen({ route, navigation }) {
         await uploadToGallery(imageUri, 'image');
       }
     } catch (error) {
-      console.error('Error choosing photo:', error);
       Alert.alert('Error', 'Failed to choose photo');
     }
   };
@@ -150,7 +147,6 @@ export default function ProfileScreen({ route, navigation }) {
         await uploadToGallery(imageUri, 'image');
       }
     } catch (error) {
-      console.error('Error taking photo:', error);
       Alert.alert('Error', 'Failed to take photo');
     }
   };
@@ -173,7 +169,6 @@ export default function ProfileScreen({ route, navigation }) {
         await uploadToGallery(result.assets[0].uri, 'video');
       }
     } catch (error) {
-      console.error('Error choosing video:', error);
       Alert.alert('Error', 'Failed to choose video');
     }
   };
@@ -191,7 +186,6 @@ export default function ProfileScreen({ route, navigation }) {
         await loadGalleryPosts(); // Reload gallery
       }
     } catch (error) {
-      console.error('Error uploading to gallery:', error);
       Alert.alert('Error', 'Failed to upload');
     } finally {
       setUploading(false);

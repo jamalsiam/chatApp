@@ -1,26 +1,32 @@
 import { collection, getDocs } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    FlatList,
+    Dimensions,
     Image,
     RefreshControl,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View
+    View,
+    FlatList
 } from 'react-native';
-import { Video } from 'expo-video';
+import { Video, useVideoPlayer, VideoView } from 'expo-video';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { db } from '../config/firebase';
 import authService from '../services/authService';
 import userService from '../services/userService';
+import { formatDistanceToNow } from 'date-fns';
+
+const { width, height } = Dimensions.get('window');
 
 export default function FeedScreen({ navigation }) {
     const [posts, setPosts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [currentIndex, setCurrentIndex] = useState(0);
     const currentUser = authService.getCurrentUser();
+    const flatListRef = useRef(null);
 
     useEffect(() => {
         loadPosts();
@@ -28,33 +34,20 @@ export default function FeedScreen({ navigation }) {
 
     const loadPosts = async () => {
         try {
-            console.log('📱 Feed: Starting to load posts...');
-
-            // Get all users from database
             const usersSnapshot = await getDocs(collection(db, 'users'));
             const allUsers = usersSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
 
-            console.log(`👥 Feed: Found ${allUsers.length} total users`);
-
-            // Get gallery posts from all users
             const allPosts = [];
 
             for (const user of allUsers) {
-                // Skip current user's posts
                 if (user.id === currentUser.uid) continue;
 
                 try {
-                    // Get posts from this user's gallery
                     const userPosts = await userService.getUserGalleryPosts(user.id);
 
-                    if (userPosts.length > 0) {
-                        console.log(`✅ Feed: User ${user.displayName} has ${userPosts.length} posts`);
-                    }
-
-                    // Add posts with user info
                     userPosts.forEach(post => {
                         allPosts.push({
                             ...post,
@@ -67,18 +60,14 @@ export default function FeedScreen({ navigation }) {
                         });
                     });
                 } catch (error) {
-                    console.error(`❌ Feed: Error loading posts for user ${user.id}:`, error);
+                    // Silently handle errors
                 }
             }
 
-            console.log(`📊 Feed: Total posts found: ${allPosts.length}`);
-
-            // Randomize the posts array
             const shuffledPosts = allPosts.sort(() => Math.random() - 0.5);
-
             setPosts(shuffledPosts);
         } catch (error) {
-            console.error('❌ Feed: Error loading posts:', error);
+            // Silently handle errors
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -100,57 +89,96 @@ export default function FeedScreen({ navigation }) {
             .substring(0, 2);
     };
 
-    const renderPost = ({ item }) => {
-        return (
-            <View style={styles.postContainer}>
-                {/* Post Header */}
-                <TouchableOpacity
-                    style={styles.postHeader}
-                    onPress={() => navigation.navigate('Profile', { userId: item.userId })}
-                >
-                    {item.userInfo?.photoURL ? (
-                        <Image source={{ uri: item.userInfo.photoURL }} style={styles.avatar} />
-                    ) : (
-                        <View style={styles.avatarPlaceholder}>
-                            <Text style={styles.avatarText}>{getInitials(item.userInfo?.displayName)}</Text>
-                        </View>
-                    )}
-                    <View style={styles.userInfo}>
-                        <Text style={styles.userName}>{item.userInfo?.displayName || 'Unknown'}</Text>
-                        <Text style={styles.postTime}>
-                            {item.timestamp?.toDate?.()?.toLocaleDateString() || 'Just now'}
-                        </Text>
-                    </View>
-                </TouchableOpacity>
+    const getTimeAgo = (timestamp) => {
+        try {
+            const date = timestamp?.toDate?.();
+            return date ? formatDistanceToNow(date, { addSuffix: true }) : '';
+        } catch {
+            return '';
+        }
+    };
 
-                {/* Post Media */}
+    const onViewableItemsChanged = useRef(({ viewableItems }) => {
+        if (viewableItems.length > 0) {
+            setCurrentIndex(viewableItems[0].index || 0);
+        }
+    }).current;
+
+    const viewabilityConfig = useRef({
+        itemVisiblePercentThreshold: 80,
+    }).current;
+
+    const renderPost = ({ item, index }) => {
+        const isVisible = index === currentIndex;
+
+        return (
+            <View style={styles.reelContainer}>
                 {item.mediaType === 'image' ? (
-                    <TouchableOpacity
-                        onPress={() => navigation.navigate('MediaViewer', {
-                            mediaUrl: item.mediaUrl,
-                            mediaType: 'image'
-                        })}
-                    >
-                        <Image source={{ uri: item.mediaUrl }} style={styles.postMedia} resizeMode="cover" />
-                    </TouchableOpacity>
-                ) : (
-                    <Video
+                    <Image
                         source={{ uri: item.mediaUrl }}
-                        style={styles.postMedia}
-                        useNativeControls
+                        style={styles.media}
                         resizeMode="cover"
                     />
-                )}
-
-                {/* Post Caption */}
-                {item.caption && (
-                    <View style={styles.captionContainer}>
-                        <Text style={styles.caption}>
-                            <Text style={styles.captionUser}>{item.userInfo?.displayName} </Text>
-                            {item.caption}
-                        </Text>
+                ) : (
+                    <View style={styles.media}>
+                        {isVisible && (
+                            <Video
+                                source={{ uri: item.mediaUrl }}
+                                style={StyleSheet.absoluteFill}
+                                useNativeControls={false}
+                                resizeMode="cover"
+                                isLooping
+                                shouldPlay={isVisible}
+                            />
+                        )}
                     </View>
                 )}
+
+                {/* Overlay Content */}
+                <View style={styles.overlay}>
+                    {/* Top Bar */}
+                    <View style={styles.topBar}>
+                        <Text style={styles.feedTitle}>Feed</Text>
+                    </View>
+
+                    {/* Bottom Content */}
+                    <View style={styles.bottomContent}>
+                        {/* User Info */}
+                        <TouchableOpacity
+                            style={styles.userInfo}
+                            onPress={() => navigation.navigate('Profile', { userId: item.userInfo.uid })}
+                        >
+                            {item.userInfo?.photoURL ? (
+                                <Image source={{ uri: item.userInfo.photoURL }} style={styles.avatar} />
+                            ) : (
+                                <View style={styles.avatarPlaceholder}>
+                                    <Text style={styles.avatarText}>{getInitials(item.userInfo?.displayName)}</Text>
+                                </View>
+                            )}
+                            <View style={styles.userDetails}>
+                                <Text style={styles.userName}>{item.userInfo?.displayName || 'Unknown'}</Text>
+                                <Text style={styles.postTime}>{getTimeAgo(item.timestamp)}</Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        {/* Caption */}
+                        {item.caption && (
+                            <Text style={styles.caption} numberOfLines={2}>
+                                {item.caption}
+                            </Text>
+                        )}
+                    </View>
+
+                    {/* Side Actions */}
+                    <View style={styles.sideActions}>
+                        <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={() => navigation.navigate('Profile', { userId: item.userInfo.uid })}
+                        >
+                            <Icon name="person-outline" size={28} color="#fff" />
+                        </TouchableOpacity>
+                    </View>
+                </View>
             </View>
         );
     };
@@ -163,40 +191,49 @@ export default function FeedScreen({ navigation }) {
         );
     }
 
+    if (posts.length === 0) {
+        return (
+            <View style={styles.emptyContainer}>
+                <Icon name="play-circle-outline" size={80} color="#444" />
+                <Text style={styles.emptyText}>No posts yet</Text>
+                <Text style={styles.emptySubtext}>Be the first to share photos and videos!</Text>
+                <TouchableOpacity
+                    style={styles.uploadButton}
+                    onPress={() => navigation.navigate('Profile')}
+                >
+                    <Icon name="add-circle" size={20} color="#fff" style={{ marginRight: 8 }} />
+                    <Text style={styles.uploadButtonText}>Upload to Gallery</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
+
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Feed</Text>
-            </View>
-
-            {posts.length === 0 ? (
-                <View style={styles.emptyContainer}>
-                    <Icon name="play-circle-outline" size={80} color="#444" />
-                    <Text style={styles.emptyText}>No posts yet</Text>
-                    <Text style={styles.emptySubtext}>Be the first to share photos and videos!</Text>
-                    <TouchableOpacity
-                        style={styles.findUsersButton}
-                        onPress={() => navigation.navigate('Profile')}
-                    >
-                        <Icon name="add-circle" size={20} color="#fff" style={{ marginRight: 8 }} />
-                        <Text style={styles.findUsersText}>Upload to Gallery</Text>
-                    </TouchableOpacity>
-                </View>
-            ) : (
-                <FlatList
-                    data={posts}
-                    keyExtractor={(item) => item.id}
-                    renderItem={renderPost}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={handleRefresh}
-                            tintColor="#6C5CE7"
-                        />
-                    }
-                    contentContainerStyle={styles.list}
-                />
-            )}
+            <FlatList
+                ref={flatListRef}
+                data={posts}
+                renderItem={renderPost}
+                keyExtractor={(item) => item.id}
+                pagingEnabled
+                showsVerticalScrollIndicator={false}
+                snapToInterval={height}
+                snapToAlignment="start"
+                decelerationRate="fast"
+                onViewableItemsChanged={onViewableItemsChanged}
+                viewabilityConfig={viewabilityConfig}
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={2}
+                windowSize={3}
+                initialNumToRender={1}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={handleRefresh}
+                        tintColor="#fff"
+                    />
+                }
+            />
         </View>
     );
 }
@@ -204,28 +241,19 @@ export default function FeedScreen({ navigation }) {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#1A1A1A',
-    },
-    header: {
-        paddingHorizontal: 20,
-        paddingTop: 50,
-        paddingBottom: 15,
-    },
-    headerTitle: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        color: '#fff',
+        backgroundColor: '#000',
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#1A1A1A',
+        backgroundColor: '#000',
     },
     emptyContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: '#000',
         paddingHorizontal: 40,
     },
     emptyText: {
@@ -238,8 +266,9 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#888',
         marginTop: 10,
+        textAlign: 'center',
     },
-    findUsersButton: {
+    uploadButton: {
         flexDirection: 'row',
         backgroundColor: '#6C5CE7',
         paddingHorizontal: 30,
@@ -248,27 +277,52 @@ const styles = StyleSheet.create({
         marginTop: 30,
         alignItems: 'center',
     },
-    findUsersText: {
+    uploadButtonText: {
         color: '#fff',
         fontSize: 16,
         fontWeight: '600',
     },
-    list: {
-        paddingBottom: 20,
+    reelContainer: {
+        width: width,
+        height: height,
+        backgroundColor: '#000',
     },
-    postContainer: {
-        backgroundColor: '#2A2A2A',
-        marginBottom: 15,
+    media: {
+        width: '100%',
+        height: '100%',
     },
-    postHeader: {
+    overlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'space-between',
+    },
+    topBar: {
+        paddingTop: 50,
+        paddingHorizontal: 20,
+        paddingBottom: 10,
+    },
+    feedTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#fff',
+        textShadowColor: 'rgba(0, 0, 0, 0.75)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
+    },
+    bottomContent: {
+        paddingHorizontal: 20,
+        paddingBottom: 40,
+    },
+    userInfo: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 12,
+        marginBottom: 12,
     },
     avatar: {
         width: 40,
         height: 40,
         borderRadius: 20,
+        borderWidth: 2,
+        borderColor: '#fff',
     },
     avatarPlaceholder: {
         width: 40,
@@ -277,39 +331,55 @@ const styles = StyleSheet.create({
         backgroundColor: '#6C5CE7',
         justifyContent: 'center',
         alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#fff',
     },
     avatarText: {
         color: '#fff',
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: 'bold',
     },
-    userInfo: {
+    userDetails: {
         marginLeft: 12,
+        flex: 1,
     },
     userName: {
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: '600',
         color: '#fff',
+        textShadowColor: 'rgba(0, 0, 0, 0.75)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
     },
     postTime: {
         fontSize: 12,
-        color: '#888',
+        color: '#ddd',
         marginTop: 2,
-    },
-    postMedia: {
-        width: '100%',
-        height: 400,
-        backgroundColor: '#000',
-    },
-    captionContainer: {
-        padding: 12,
+        textShadowColor: 'rgba(0, 0, 0, 0.75)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
     },
     caption: {
         fontSize: 14,
         color: '#fff',
-        lineHeight: 18,
+        lineHeight: 20,
+        textShadowColor: 'rgba(0, 0, 0, 0.75)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
     },
-    captionUser: {
-        fontWeight: '600',
+    sideActions: {
+        position: 'absolute',
+        right: 12,
+        bottom: 100,
+        alignItems: 'center',
+    },
+    actionButton: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
     },
 });

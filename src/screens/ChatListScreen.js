@@ -1,4 +1,4 @@
-import { format } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { useEffect, useState } from 'react';
 import {
   FlatList,
@@ -109,7 +109,7 @@ export default function ChatListScreen({ navigation }) {
             </View>
             {lastMessageTime && (
               <Text style={styles.timestamp}>
-                {format(lastMessageTime, 'HH:mm')}
+                {formatDistanceToNow(lastMessageTime, { addSuffix: true })}
               </Text>
             )}
           </View>

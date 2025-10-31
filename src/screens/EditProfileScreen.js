@@ -61,7 +61,6 @@ export default function EditProfileScreen({ navigation }) {
         photoURL: profile.photoURL || ''
       });
     } catch (error) {
-      console.error('Error loading profile:', error);
       Alert.alert('Error', 'Failed to load profile');
     } finally {
       setLoading(false);
@@ -107,14 +106,12 @@ export default function EditProfileScreen({ navigation }) {
           setPhotoURL(downloadURL);
           Alert.alert('Success', 'Profile photo updated!');
         } catch (error) {
-          console.error('Error uploading photo:', error);
           Alert.alert('Error', 'Failed to upload photo');
         } finally {
           setUploadingPhoto(false);
         }
       }
     } catch (error) {
-      console.error('Error picking photo:', error);
       Alert.alert('Error', 'Failed to pick photo');
     }
   };
@@ -153,14 +150,12 @@ export default function EditProfileScreen({ navigation }) {
           setPhotoURL(downloadURL);
           Alert.alert('Success', 'Profile photo updated!');
         } catch (error) {
-          console.error('Error uploading photo:', error);
           Alert.alert('Error', 'Failed to upload photo');
         } finally {
           setUploadingPhoto(false);
         }
       }
     } catch (error) {
-      console.error('Error taking photo:', error);
       Alert.alert('Error', 'Failed to take photo');
     }
   };
@@ -212,7 +207,6 @@ export default function EditProfileScreen({ navigation }) {
         Alert.alert('Error', result.error || 'Failed to update profile');
       }
     } catch (error) {
-      console.error('Error saving profile:', error);
       Alert.alert('Error', 'Failed to update profile');
     } finally {
       setSaving(false);
