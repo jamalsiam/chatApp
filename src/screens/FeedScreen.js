@@ -28,12 +28,16 @@ export default function FeedScreen({ navigation }) {
 
     const loadPosts = async () => {
         try {
+            console.log('📱 Feed: Starting to load posts...');
+
             // Get all users from database
             const usersSnapshot = await getDocs(collection(db, 'users'));
             const allUsers = usersSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
+
+            console.log(`👥 Feed: Found ${allUsers.length} total users`);
 
             // Get gallery posts from all users
             const allPosts = [];
@@ -45,6 +49,10 @@ export default function FeedScreen({ navigation }) {
                 try {
                     // Get posts from this user's gallery
                     const userPosts = await userService.getUserGalleryPosts(user.id);
+
+                    if (userPosts.length > 0) {
+                        console.log(`✅ Feed: User ${user.displayName} has ${userPosts.length} posts`);
+                    }
 
                     // Add posts with user info
                     userPosts.forEach(post => {
@@ -59,16 +67,18 @@ export default function FeedScreen({ navigation }) {
                         });
                     });
                 } catch (error) {
-                    console.error(`Error loading posts for user ${user.id}:`, error);
+                    console.error(`❌ Feed: Error loading posts for user ${user.id}:`, error);
                 }
             }
+
+            console.log(`📊 Feed: Total posts found: ${allPosts.length}`);
 
             // Randomize the posts array
             const shuffledPosts = allPosts.sort(() => Math.random() - 0.5);
 
             setPosts(shuffledPosts);
         } catch (error) {
-            console.error('Error loading posts:', error);
+            console.error('❌ Feed: Error loading posts:', error);
         } finally {
             setLoading(false);
             setRefreshing(false);

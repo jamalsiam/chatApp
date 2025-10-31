@@ -178,22 +178,30 @@ class UserService {
   // Get user's gallery posts
   async getUserGalleryPosts(userId) {
     try {
-
       const postsRef = collection(db, 'gallery_posts');
       const q = query(
         postsRef,
-        where('userId', '==', userId),
-        orderBy('createdAt', 'desc')
+        where('userId', '==', userId)
       );
 
       const snapshot = await getDocs(q);
       const posts = [];
 
       snapshot.forEach((doc) => {
+        const data = doc.data();
         posts.push({
           id: doc.id,
-          ...doc.data()
+          ...data,
+          // Ensure timestamp is available for sorting
+          timestamp: data.createdAt || data.timestamp
         });
+      });
+
+      // Sort by timestamp on client side to avoid Firestore index requirement
+      posts.sort((a, b) => {
+        const timeA = a.timestamp?.toDate?.() || a.createdAt?.toDate?.() || new Date(0);
+        const timeB = b.timestamp?.toDate?.() || b.createdAt?.toDate?.() || new Date(0);
+        return timeB - timeA; // Newest first
       });
 
       return posts;
