@@ -78,6 +78,19 @@ export default function ChatListScreen({ navigation }) {
     const isSentByMe = item.lastMessageSenderId === currentUser?.uid;
     const isLastMessageRead = item.lastMessageRead || false;
 
+    // Check if other user is typing
+    const typing = item.typing || {};
+    const otherUserId = item.otherUser?.id;
+    let isOtherUserTyping = false;
+
+    if (!isGroup && otherUserId && typing[otherUserId]) {
+      const typingTimestamp = typing[otherUserId];
+      const now = new Date();
+      const typingTime = typingTimestamp.toDate ? typingTimestamp.toDate() : new Date(typingTimestamp);
+      const diff = now - typingTime;
+      isOtherUserTyping = diff < 3000; // Consider typing if within last 3 seconds
+    }
+
     // For groups, prepare group info
     const displayName = isGroup ? item.groupName : item.otherUser?.displayName;
     const displayPhoto = isGroup ? item.groupPhoto : item.otherUser?.photoURL;
@@ -144,7 +157,7 @@ export default function ChatListScreen({ navigation }) {
           </View>
           <View style={styles.chatFooter}>
             <View style={styles.lastMessageContainer}>
-              {isSentByMe && (
+              {isSentByMe && !isOtherUserTyping && (
                 <Icon
                   name={isLastMessageRead ? "checkmark-done" : "checkmark"}
                   size={16}
@@ -154,9 +167,10 @@ export default function ChatListScreen({ navigation }) {
               )}
               <Text style={[
                 styles.lastMessage,
-                unreadCount > 0 && styles.unreadMessage
+                unreadCount > 0 && styles.unreadMessage,
+                isOtherUserTyping && styles.typingMessage
               ]} numberOfLines={1}>
-                {item.lastMessage || 'No messages yet'}
+                {isOtherUserTyping ? 'typing...' : (item.lastMessage || 'No messages yet')}
               </Text>
             </View>
             {unreadCount > 0 && (
@@ -373,6 +387,10 @@ const styles = StyleSheet.create({
   unreadMessage: {
     fontWeight: 'bold',
     color: '#fff',
+  },
+  typingMessage: {
+    color: '#6C5CE7',
+    fontStyle: 'italic',
   },
   unreadBadge: {
     backgroundColor: '#6C5CE7',

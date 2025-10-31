@@ -636,8 +636,13 @@ export default function ChatRoomScreen({ route, navigation }) {
                     )}
                     <View style={styles.headerInfo}>
                         <Text style={styles.headerName}>{otherUserData.displayName}</Text>
-                        <Text style={styles.headerStatus}>
-                            {otherUserData.isOnline ? (
+                        <Text style={[
+                            styles.headerStatus,
+                            isOtherUserTyping && styles.typingStatus
+                        ]}>
+                            {isOtherUserTyping ? (
+                                'typing...'
+                            ) : otherUserData.isOnline ? (
                                 'Online'
                             ) : otherUserData.lastSeen?.toDate ? (
                                 `Last seen ${formatDistanceToNow(otherUserData.lastSeen.toDate(), { addSuffix: true })}`
@@ -835,6 +840,10 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#888',
         marginTop: 2,
+    },
+    typingStatus: {
+        color: '#6C5CE7',
+        fontStyle: 'italic',
     },
     headerRight: {
         alignItems: 'flex-end',
