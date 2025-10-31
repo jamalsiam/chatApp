@@ -12,10 +12,10 @@ import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 
 // Main App Screens
-import AlbumScreen from './src/screens/AlbumScreen';
 import CallsScreen from './src/screens/CallsScreen';
 import ChatListScreen from './src/screens/ChatListScreen';
 import ChatRoomScreen from './src/screens/ChatRoomScreen';
+import CreateGroupScreen from './src/screens/CreateGroupScreen';
 import EditProfileScreen from './src/screens/EditProfileScreen';
 import FeedScreen from './src/screens/FeedScreen';
 import FollowersListScreen from './src/screens/FollowersListScreen';
@@ -45,9 +45,6 @@ function HomeTabs() {
             case 'Feed':
               iconName = focused ? 'play-circle' : 'play-circle-outline';
               break;
-            case 'Album':
-              iconName = focused ? 'images' : 'images-outline';
-              break;
             case 'Profile':
               iconName = focused ? 'person' : 'person-outline';
               break;
@@ -73,7 +70,6 @@ function HomeTabs() {
       <Tab.Screen name="Chats" component={ChatListScreen} />
       <Tab.Screen name="Calls" component={CallsScreen} />
       <Tab.Screen name="Feed" component={FeedScreen} />
-      <Tab.Screen name="Album" component={AlbumScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
@@ -166,6 +162,7 @@ export default function App() {
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="FollowersList" component={FollowersListScreen} />
             <Stack.Screen name="Notifications" component={NotificationsScreen} />
+            <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
           </>
         )}
       </Stack.Navigator>

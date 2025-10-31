@@ -1,4 +1,4 @@
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -14,6 +14,7 @@ import { Video } from 'expo-video';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { db } from '../config/firebase';
 import authService from '../services/authService';
+import userService from '../services/userService';
 
 export default function FeedScreen({ navigation }) {
     const [posts, setPosts] = useState([]);
@@ -27,7 +28,7 @@ export default function FeedScreen({ navigation }) {
 
     const loadPosts = async () => {
         try {
-            // Load gallery posts from all users the current user is following
+            // Get current user's profile to see who they're following
             const userDoc = await getDocs(collection(db, 'users'));
             const currentUserData = userDoc.docs.find(doc => doc.id === currentUser.uid)?.data();
             const following = currentUserData?.following || [];
@@ -38,29 +39,35 @@ export default function FeedScreen({ navigation }) {
                 return;
             }
 
-            // Get all posts from followed users
-            const postsQuery = query(
-                collection(db, 'galleryPosts'),
-                orderBy('timestamp', 'desc')
-            );
-
-            const postsSnapshot = await getDocs(postsQuery);
+            // Get gallery posts from all followed users using userService
             const allPosts = [];
 
-            for (const postDoc of postsSnapshot.docs) {
-                const postData = postDoc.data();
-                if (following.includes(postData.userId)) {
-                    // Get user info
-                    const userSnapshot = await getDocs(collection(db, 'users'));
-                    const userInfo = userSnapshot.docs.find(doc => doc.id === postData.userId)?.data();
+            for (const userId of following) {
+                try {
+                    // Get posts from this user's gallery
+                    const userPosts = await userService.getUserGalleryPosts(userId);
 
-                    allPosts.push({
-                        id: postDoc.id,
-                        ...postData,
-                        userInfo: userInfo || {}
+                    // Get user info
+                    const userInfo = await userService.getUserProfile(userId);
+
+                    // Add posts with user info
+                    userPosts.forEach(post => {
+                        allPosts.push({
+                            ...post,
+                            userInfo: userInfo || {}
+                        });
                     });
+                } catch (error) {
+                    console.error(`Error loading posts for user ${userId}:`, error);
                 }
             }
+
+            // Sort all posts by timestamp (newest first)
+            allPosts.sort((a, b) => {
+                const timeA = a.timestamp?.toDate?.() || new Date(0);
+                const timeB = b.timestamp?.toDate?.() || new Date(0);
+                return timeB - timeA;
+            });
 
             setPosts(allPosts);
         } catch (error) {
