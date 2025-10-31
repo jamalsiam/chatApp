@@ -253,6 +253,7 @@ export default function App() {
             <Stack.Screen name="Home" component={HomeTabs} />
             <Stack.Screen name="SearchUsers" component={SearchUsersScreen} />
             <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="MediaViewer" component={MediaViewerScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="FollowersList" component={FollowersListScreen} />
