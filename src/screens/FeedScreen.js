@@ -9,7 +9,8 @@ import {
     Text,
     TouchableOpacity,
     View,
-    FlatList
+    FlatList,
+    PanResponder
 } from 'react-native';
 import { Video, useVideoPlayer, VideoView } from 'expo-video';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -27,6 +28,29 @@ export default function FeedScreen({ navigation }) {
     const [currentIndex, setCurrentIndex] = useState(0);
     const currentUser = authService.getCurrentUser();
     const flatListRef = useRef(null);
+
+    // Pan responder for swipe gestures
+    const panResponder = useRef(
+        PanResponder.create({
+            onMoveShouldSetPanResponder: (evt, gestureState) => {
+                // Activate when horizontal movement is greater than vertical
+                return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 30;
+            },
+            onPanResponderRelease: (evt, gestureState) => {
+                const currentPost = posts[currentIndex];
+                if (!currentPost) return;
+
+                // Swipe right - go to user profile
+                if (gestureState.dx > 50) {
+                    navigation.navigate('Profile', { userId: currentPost.userId });
+                }
+                // Swipe left - go to chat list
+                else if (gestureState.dx < -50) {
+                    navigation.navigate('Chats');
+                }
+            },
+        })
+    ).current;
 
     useEffect(() => {
         loadPosts();
@@ -209,7 +233,7 @@ export default function FeedScreen({ navigation }) {
     }
 
     return (
-        <View style={styles.container}>
+        <View style={styles.container} {...panResponder.panHandlers}>
             <FlatList
                 ref={flatListRef}
                 data={posts}

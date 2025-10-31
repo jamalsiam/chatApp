@@ -7,6 +7,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from './src/config/firebase';
 import authService from './src/services/authService';
+import chatService from './src/services/chatService';
 import notificationService from './src/services/NotificationService';
 
 // Auth Screens
@@ -31,6 +32,25 @@ const Tab = createBottomTabNavigator();
 
 // Bottom Tab Navigator
 function HomeTabs() {
+  const [unreadCount, setUnreadCount] = useState(0);
+  const currentUser = authService.getCurrentUser();
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // Listen to chat list for unread count
+    const unsubscribe = chatService.listenToChatList(currentUser.uid, (chatList) => {
+      // Calculate total unread messages
+      const total = chatList.reduce((sum, chat) => {
+        const count = chat.unreadCount?.[currentUser.uid] || 0;
+        return sum + count;
+      }, 0);
+      setUnreadCount(total);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -69,7 +89,19 @@ function HomeTabs() {
         headerShown: false,
       })}
     >
-      <Tab.Screen name="Chats" component={ChatListScreen} />
+      <Tab.Screen
+        name="Chats"
+        component={ChatListScreen}
+        options={{
+          tabBarBadge: unreadCount > 0 ? unreadCount : null,
+          tabBarBadgeStyle: {
+            backgroundColor: '#6C5CE7',
+            color: '#fff',
+            fontSize: 10,
+            fontWeight: 'bold',
+          },
+        }}
+      />
       <Tab.Screen name="Calls" component={CallsScreen} />
       <Tab.Screen name="Feed" component={FeedScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
@@ -123,8 +155,8 @@ export default function App() {
           isOnline: true,
           lastSeen: serverTimestamp()
         }, { merge: true });
-      } else if (nextAppState === 'background' || nextAppState === 'inactive') {
-        // App went to background - set offline
+      } else if (nextAppState === 'background') {
+        // App went to background - set offline (not on inactive to avoid false negatives)
         await setDoc(doc(db, 'users', user.uid), {
           isOnline: false,
           lastSeen: serverTimestamp()
@@ -132,8 +164,29 @@ export default function App() {
       }
     });
 
+    // Set up heartbeat to update lastSeen every 30 seconds while app is active
+    const heartbeatInterval = setInterval(async () => {
+      const user = authService.getCurrentUser();
+      if (user && AppState.currentState === 'active') {
+        await setDoc(doc(db, 'users', user.uid), {
+          lastSeen: serverTimestamp(),
+          isOnline: true
+        }, { merge: true });
+      }
+    }, 30000); // Update every 30 seconds
+
     return () => {
       subscription.remove();
+      clearInterval(heartbeatInterval);
+
+      // Mark offline when component unmounts
+      const user = authService.getCurrentUser();
+      if (user) {
+        setDoc(doc(db, 'users', user.uid), {
+          isOnline: false,
+          lastSeen: serverTimestamp()
+        }, { merge: true }).catch(() => {});
+      }
     };
   }, [isAuthenticated]);
 

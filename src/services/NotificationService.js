@@ -319,12 +319,23 @@ class NotificationService {
   // Send new message notification
   async sendMessageNotification(senderId, receiverId, message, chatId) {
     try {
+      // Get receiver info to check if they're in the chat
+      const receiverDoc = await getDoc(doc(db, 'users', receiverId));
+      if (!receiverDoc.exists()) return;
+
+      const receiverData = receiverDoc.data();
+
+      // Don't send notification if receiver is currently in this chat room
+      if (receiverData.activeChatId === chatId) {
+        return;
+      }
+
       // Get sender info
       const senderDoc = await getDoc(doc(db, 'users', senderId));
       if (!senderDoc.exists()) return;
 
       const senderName = senderDoc.data().displayName || 'Someone';
-      
+
       // Send notification
       await this.sendNotificationToUser(
         receiverId,

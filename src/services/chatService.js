@@ -723,6 +723,29 @@ class ChatService {
       return { success: false, error: error.message };
     }
   }
+
+  // Set typing status
+  async setTypingStatus(chatId, userId, isTyping) {
+    try {
+      const chatRef = doc(db, 'chats', chatId);
+      await updateDoc(chatRef, {
+        [`typing.${userId}`]: isTyping ? serverTimestamp() : null
+      });
+    } catch (error) {
+      // Handle error silently
+    }
+  }
+
+  // Listen to typing status
+  listenToTypingStatus(chatId, callback) {
+    const chatRef = doc(db, 'chats', chatId);
+    return onSnapshot(chatRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const typing = docSnap.data().typing || {};
+        callback(typing);
+      }
+    });
+  }
 }
 
 export default new ChatService();

@@ -1,7 +1,7 @@
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -31,10 +31,25 @@ export default function ChatRoomScreen({ route, navigation }) {
     const [editingMessage, setEditingMessage] = useState(null);
     const [replyingTo, setReplyingTo] = useState(null);
     const [otherUserData, setOtherUserData] = useState(otherUser);
+    const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
     const flatListRef = useRef(null);
+    const typingTimeoutRef = useRef(null);
     const currentUser = authService.getCurrentUser();
 
     useEffect(() => {
+        // Set active chat when entering room
+        const setActiveChatId = async () => {
+            try {
+                await updateDoc(doc(db, 'users', currentUser.uid), {
+                    activeChatId: chatId,
+                    lastActiveAt: serverTimestamp()
+                });
+            } catch (error) {
+                // Handle error silently
+            }
+        };
+        setActiveChatId();
+
         // Listen to messages
         const unsubscribe = chatService.listenToMessages(chatId, (msgs) => {
             setMessages(msgs);
@@ -50,7 +65,13 @@ export default function ChatRoomScreen({ route, navigation }) {
         // Get user balance
         loadUserBalance();
 
-        return () => unsubscribe();
+        return () => {
+            unsubscribe();
+            // Clear active chat when leaving room
+            updateDoc(doc(db, 'users', currentUser.uid), {
+                activeChatId: null
+            }).catch(() => {});
+        };
     }, [chatId]);
 
     // Listen to other user's online status and last seen
@@ -66,6 +87,34 @@ export default function ChatRoomScreen({ route, navigation }) {
 
         return () => unsubscribe();
     }, [otherUser?.id]);
+
+    // Listen to typing status
+    useEffect(() => {
+        const unsubscribe = chatService.listenToTypingStatus(chatId, (typing) => {
+            // Check if other user is typing (not current user)
+            const otherUserId = otherUser?.id;
+            if (otherUserId && typing[otherUserId]) {
+                const typingTimestamp = typing[otherUserId];
+                // Consider typing if timestamp is within last 3 seconds
+                const now = new Date();
+                const typingTime = typingTimestamp.toDate ? typingTimestamp.toDate() : new Date(typingTimestamp);
+                const diff = now - typingTime;
+                setIsOtherUserTyping(diff < 3000);
+            } else {
+                setIsOtherUserTyping(false);
+            }
+        });
+
+        return () => {
+            unsubscribe();
+            // Clear typing timeout on unmount
+            if (typingTimeoutRef.current) {
+                clearTimeout(typingTimeoutRef.current);
+            }
+            // Clear typing status
+            chatService.setTypingStatus(chatId, currentUser.uid, false);
+        };
+    }, [chatId, otherUser?.id]);
 
     const loadUserBalance = async () => {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -88,6 +137,12 @@ export default function ChatRoomScreen({ route, navigation }) {
 
     const handleSend = async () => {
         if (!newMessage.trim()) return;
+
+        // Clear typing status
+        chatService.setTypingStatus(chatId, currentUser.uid, false);
+        if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+        }
 
         // Handle editing
         if (editingMessage) {
@@ -665,6 +720,13 @@ export default function ChatRoomScreen({ route, navigation }) {
                 </View>
             )}
 
+            {/* Typing Indicator */}
+            {isOtherUserTyping && (
+                <View style={styles.typingIndicator}>
+                    <Text style={styles.typingText}>{otherUserData.displayName} is typing...</Text>
+                </View>
+            )}
+
             {/* Input Bar */}
             <View style={styles.inputContainer}>
                 <TouchableOpacity
@@ -680,7 +742,26 @@ export default function ChatRoomScreen({ route, navigation }) {
                     placeholder="Type a message..."
                     placeholderTextColor="#888"
                     value={newMessage}
-                    onChangeText={setNewMessage}
+                    onChangeText={(text) => {
+                        setNewMessage(text);
+
+                        // Set typing status
+                        if (text.length > 0) {
+                            chatService.setTypingStatus(chatId, currentUser.uid, true);
+
+                            // Clear existing timeout
+                            if (typingTimeoutRef.current) {
+                                clearTimeout(typingTimeoutRef.current);
+                            }
+
+                            // Set timeout to clear typing status after 3 seconds
+                            typingTimeoutRef.current = setTimeout(() => {
+                                chatService.setTypingStatus(chatId, currentUser.uid, false);
+                            }, 3000);
+                        } else {
+                            chatService.setTypingStatus(chatId, currentUser.uid, false);
+                        }
+                    }}
                     multiline
                     maxLength={500}
                     editable={!sending}
@@ -912,6 +993,16 @@ const styles = StyleSheet.create({
     },
     attachButton: {
         marginRight: 10,
+    },
+    typingIndicator: {
+        paddingHorizontal: 20,
+        paddingVertical: 8,
+        backgroundColor: '#2A2A2A',
+    },
+    typingText: {
+        color: '#888',
+        fontSize: 13,
+        fontStyle: 'italic',
     },
     mediaBubble: {
         padding: 4,
