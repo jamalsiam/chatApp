@@ -403,6 +403,25 @@ class ChatService {
         balanceCoins: increment(1)
       });
 
+      // Build reply info safely
+      const replyInfo = {
+        messageId: replyTo.id || '',
+        senderId: replyTo.senderId || ''
+      };
+
+      // Add message text if available
+      if (replyTo.message) {
+        replyInfo.message = replyTo.message;
+      }
+
+      // Add media info if available
+      if (replyTo.mediaType) {
+        replyInfo.mediaType = replyTo.mediaType;
+      }
+      if (replyTo.mediaUrl) {
+        replyInfo.mediaUrl = replyTo.mediaUrl;
+      }
+
       // Add message with reply info
       const messageData = {
         chatId,
@@ -411,13 +430,7 @@ class ChatService {
         message,
         timestamp: serverTimestamp(),
         read: false,
-        replyTo: {
-          messageId: replyTo.id,
-          message: replyTo.message,
-          senderId: replyTo.senderId,
-          mediaType: replyTo.mediaType,
-          mediaUrl: replyTo.mediaUrl
-        }
+        replyTo: replyInfo
       };
 
       await addDoc(collection(db, 'messages'), messageData);
@@ -431,6 +444,7 @@ class ChatService {
 
       return { success: true };
     } catch (error) {
+      console.error('Error sending reply:', error);
       return { success: false, error: error.message };
     }
   }

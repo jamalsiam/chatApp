@@ -439,7 +439,9 @@ export default function ChatRoomScreen({ route, navigation }) {
                                         {item.replyTo.senderId === currentUser.uid ? 'You' : otherUser.displayName}
                                     </Text>
                                     <Text style={styles.replyText} numberOfLines={1}>
-                                        {item.replyTo.mediaType ? `${item.replyTo.mediaType === 'image' ? '📷' : '🎥'} ${item.replyTo.mediaType}` : item.replyTo.message}
+                                        {item.replyTo.mediaType
+                                            ? `${item.replyTo.mediaType === 'image' ? '📷 Photo' : item.replyTo.mediaType === 'video' ? '🎥 Video' : '📄 Document'}`
+                                            : item.replyTo.message || 'Message'}
                                     </Text>
                                 </View>
                             </View>
@@ -592,7 +594,11 @@ export default function ChatRoomScreen({ route, navigation }) {
                                 {editingMessage ? 'Editing message' : 'Replying to'}
                             </Text>
                             <Text style={styles.actionBannerMessage} numberOfLines={1}>
-                                {editingMessage ? editingMessage.message : replyingTo?.message}
+                                {editingMessage
+                                    ? editingMessage.message
+                                    : replyingTo?.mediaType
+                                        ? `${replyingTo.mediaType === 'image' ? '📷 Photo' : replyingTo.mediaType === 'video' ? '🎥 Video' : '📄 Document'}`
+                                        : replyingTo?.message || 'Message'}
                             </Text>
                         </View>
                     </View>
