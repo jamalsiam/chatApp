@@ -22,6 +22,7 @@ export default function ChatListScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [mutedUsers, setMutedUsers] = useState([]);
+  const [blockedUsers, setBlockedUsers] = useState([]);
   const currentUser = authService.getCurrentUser();
 
   useEffect(() => {
@@ -36,19 +37,20 @@ export default function ChatListScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
-    // Load muted users list
-    const loadMutedUsers = async () => {
+    // Load muted and blocked users list
+    const loadUserLists = async () => {
       try {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
           setMutedUsers(userDoc.data().mutedUsers || []);
+          setBlockedUsers(userDoc.data().blockedUsers || []);
         }
       } catch (error) {
-        console.error('Error loading muted users:', error);
+        console.error('Error loading user lists:', error);
       }
     };
 
-    loadMutedUsers();
+    loadUserLists();
   }, []);
 
   const handleSearch = (query) => {
@@ -110,12 +112,20 @@ export default function ChatListScreen({ navigation }) {
       isOtherUserTyping = diff < 3000; // Consider typing if within last 3 seconds
     }
 
-    // Check if this chat is muted
+    // Check if this chat is muted or blocked
     const isMuted = !isGroup && otherUserId && mutedUsers.includes(otherUserId);
+    const isBlocked = !isGroup && otherUserId && blockedUsers.includes(otherUserId);
 
     // For groups, prepare group info
-    const displayName = isGroup ? item.groupName : item.otherUser?.displayName;
-    const displayPhoto = isGroup ? item.groupPhoto : item.otherUser?.photoURL;
+    let displayName = isGroup ? item.groupName : item.otherUser?.displayName;
+    let displayPhoto = isGroup ? item.groupPhoto : item.otherUser?.photoURL;
+
+    // Show "Unknown User" for blocked users
+    if (isBlocked) {
+      displayName = 'Unknown User';
+      displayPhoto = null;
+    }
+
     const memberCount = isGroup ? item.participants?.length : 0;
 
     return (

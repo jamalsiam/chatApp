@@ -35,11 +35,30 @@ export default function ProfileScreen({ route, navigation }) {
   const [followingCount, setFollowingCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [isBlockedByOther, setIsBlockedByOther] = useState(false);
 
   useEffect(() => {
     loadProfile();
     loadGalleryPosts();
+    checkBlockStatus();
   }, [targetUserId]);
+
+  const checkBlockStatus = async () => {
+    if (isOwnProfile) return;
+
+    try {
+      // Check if current user blocked target user
+      const blocked = await userService.isUserBlocked(currentUser.uid, targetUserId);
+      setIsBlocked(blocked);
+
+      // Check if target user blocked current user
+      const blockedByOther = await userService.isUserBlocked(targetUserId, currentUser.uid);
+      setIsBlockedByOther(blockedByOther);
+    } catch (error) {
+      console.error('Error checking block status:', error);
+    }
+  };
 
   const loadProfile = async () => {
     try {
@@ -310,6 +329,45 @@ export default function ProfileScreen({ route, navigation }) {
     );
   }
 
+  // Show blocked message if user is blocked
+  if (isBlocked || isBlockedByOther) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Icon name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Profile</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={styles.errorContainer}>
+          <Icon name="ban-outline" size={80} color="#888" />
+          <Text style={styles.errorText}>Profile Unavailable</Text>
+          <Text style={styles.errorSubtext}>
+            {isBlocked
+              ? "You have blocked this user. Unblock them to view their profile."
+              : "This profile is not available."}
+          </Text>
+          {isBlocked && (
+            <TouchableOpacity
+              style={styles.unblockButton}
+              onPress={async () => {
+                const result = await userService.unblockUser(currentUser.uid, targetUserId);
+                if (result.success) {
+                  setIsBlocked(false);
+                  loadProfile();
+                  loadGalleryPosts();
+                }
+              }}
+            >
+              <Text style={styles.unblockButtonText}>Unblock User</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -320,6 +378,9 @@ export default function ProfileScreen({ route, navigation }) {
         <Text style={styles.headerTitle}>{profile.displayName}</Text>
         {isOwnProfile && (
           <View style={{ flexDirection: 'row', gap: 15 }}>
+            <TouchableOpacity onPress={() => navigation.navigate('BlockedUsers')}>
+              <Icon name="ban-outline" size={24} color="#6C5CE7" />
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('NotificationSettings')}>
               <Icon name="settings-outline" size={24} color="#6C5CE7" />
             </TouchableOpacity>
@@ -505,6 +566,25 @@ const styles = StyleSheet.create({
     color: '#888',
     marginTop: 15,
     marginBottom: 20,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
+  unblockButton: {
+    backgroundColor: '#6C5CE7',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  unblockButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   backButton: {
     paddingHorizontal: 30,

@@ -1,3 +1,4 @@
+import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,6 +11,7 @@ import {
   View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { db } from '../config/firebase';
 import authService from '../services/authService';
 import chatService from '../services/chatService';
 import userService from '../services/userService';
@@ -20,18 +22,33 @@ export default function SearchUsersScreen({ navigation }) {
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState([]);
   const searchTimeoutRef = useRef(null);
   const currentUser = authService.getCurrentUser();
 
   useEffect(() => {
+    loadBlockedUsers();
     loadAllUsers();
   }, []);
+
+  const loadBlockedUsers = async () => {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (userDoc.exists()) {
+        setBlockedUsers(userDoc.data().blockedUsers || []);
+      }
+    } catch (error) {
+      console.error('Error loading blocked users:', error);
+    }
+  };
 
   const loadAllUsers = async () => {
     try {
       const fetchedUsers = await userService.getAllUsers();
-      // Filter out current user
-      const filtered = fetchedUsers.filter(u => u.id !== currentUser.uid);
+      // Filter out current user and blocked users
+      const filtered = fetchedUsers.filter(u =>
+        u.id !== currentUser.uid && !blockedUsers.includes(u.id)
+      );
       setAllUsers(filtered);
       setUsers(filtered);
     } catch (error) {

@@ -39,6 +39,7 @@ export default function ChatRoomScreen({ route, navigation }) {
     const [otherUserData, setOtherUserData] = useState(otherUser);
     const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
+    const [isBlockedByOther, setIsBlockedByOther] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
 
     // Voice message states
@@ -149,8 +150,10 @@ export default function ChatRoomScreen({ route, navigation }) {
     const checkBlockMuteStatus = async () => {
         const blocked = await userService.isUserBlocked(currentUser.uid, otherUser.id);
         const muted = await userService.isUserMuted(currentUser.uid, otherUser.id);
+        const blockedByOther = await userService.isUserBlocked(otherUser.id, currentUser.uid);
         setIsBlocked(blocked);
         setIsMuted(muted);
+        setIsBlockedByOther(blockedByOther);
     };
 
     const loadUserBalance = async () => {
@@ -1192,74 +1195,85 @@ export default function ChatRoomScreen({ route, navigation }) {
             )}
 
             {/* Input Bar */}
-            <View style={styles.inputContainer}>
-                <TouchableOpacity
-                    style={styles.attachButton}
-                    onPress={handleMediaOptions}
-                    disabled={sending || editingMessage}
-                >
-                    <Icon name="add-circle" size={28} color={(sending || editingMessage) ? "#444" : "#6C5CE7"} />
-                </TouchableOpacity>
+            {isBlocked || isBlockedByOther ? (
+                <View style={styles.blockedInputContainer}>
+                    <Icon name="ban-outline" size={20} color="#888" />
+                    <Text style={styles.blockedInputText}>
+                        {isBlocked
+                            ? "You have blocked this user. Unblock to send messages."
+                            : "You cannot send messages to this user."}
+                    </Text>
+                </View>
+            ) : (
+                <View style={styles.inputContainer}>
+                    <TouchableOpacity
+                        style={styles.attachButton}
+                        onPress={handleMediaOptions}
+                        disabled={sending || editingMessage}
+                    >
+                        <Icon name="add-circle" size={28} color={(sending || editingMessage) ? "#444" : "#6C5CE7"} />
+                    </TouchableOpacity>
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Type a message..."
-                    placeholderTextColor="#888"
-                    value={newMessage}
-                    onChangeText={(text) => {
-                        setNewMessage(text);
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Type a message..."
+                        placeholderTextColor="#888"
+                        value={newMessage}
+                        onChangeText={(text) => {
+                            setNewMessage(text);
 
-                        // Set typing status
-                        if (text.length > 0) {
-                            chatService.setTypingStatus(chatId, currentUser.uid, true);
+                            // Set typing status
+                            if (text.length > 0) {
+                                chatService.setTypingStatus(chatId, currentUser.uid, true);
 
-                            // Clear existing timeout
-                            if (typingTimeoutRef.current) {
-                                clearTimeout(typingTimeoutRef.current);
-                            }
+                                // Clear existing timeout
+                                if (typingTimeoutRef.current) {
+                                    clearTimeout(typingTimeoutRef.current);
+                                }
 
-                            // Set timeout to clear typing status after 3 seconds
-                            typingTimeoutRef.current = setTimeout(() => {
+                                // Set timeout to clear typing status after 3 seconds
+                                typingTimeoutRef.current = setTimeout(() => {
+                                    chatService.setTypingStatus(chatId, currentUser.uid, false);
+                                }, 3000);
+                            } else {
                                 chatService.setTypingStatus(chatId, currentUser.uid, false);
-                            }, 3000);
-                        } else {
-                            chatService.setTypingStatus(chatId, currentUser.uid, false);
-                        }
-                    }}
-                    multiline
-                    maxLength={500}
-                    editable={!sending && !isRecording}
-                />
+                            }
+                        }}
+                        multiline
+                        maxLength={500}
+                        editable={!sending && !isRecording}
+                    />
 
-                {/* Voice Message Button (when no text) */}
-                {!newMessage.trim() && !editingMessage && (
-                    <TouchableOpacity
-                        style={[styles.voiceButton, isRecording && styles.voiceButtonRecording]}
-                        onPressIn={startRecording}
-                        onPressOut={stopRecording}
-                        disabled={sending}
-                    >
-                        <Icon name="mic" size={24} color="#fff" />
-                    </TouchableOpacity>
-                )}
+                    {/* Voice Message Button (when no text) */}
+                    {!newMessage.trim() && !editingMessage && (
+                        <TouchableOpacity
+                            style={[styles.voiceButton, isRecording && styles.voiceButtonRecording]}
+                            onPressIn={startRecording}
+                            onPressOut={stopRecording}
+                            disabled={sending}
+                        >
+                            <Icon name="mic" size={24} color="#fff" />
+                        </TouchableOpacity>
+                    )}
 
-                {/* Send Button (when has text) */}
-                {(newMessage.trim() || editingMessage) && (
-                    <TouchableOpacity
-                        style={[styles.sendButton, (!newMessage.trim() || sending) && styles.sendButtonDisabled]}
-                        onPress={() => handleSend()}
-                        disabled={!newMessage.trim() || sending}
-                    >
-                        {sending ? (
-                            <Icon name="hourglass-outline" size={24} color="#fff" />
-                        ) : editingMessage ? (
-                            <Icon name="checkmark" size={24} color="#fff" />
-                        ) : (
-                            <Icon name="send" size={24} color="#fff" />
-                        )}
-                    </TouchableOpacity>
-                )}
-            </View>
+                    {/* Send Button (when has text) */}
+                    {(newMessage.trim() || editingMessage) && (
+                        <TouchableOpacity
+                            style={[styles.sendButton, (!newMessage.trim() || sending) && styles.sendButtonDisabled]}
+                            onPress={() => handleSend()}
+                            disabled={!newMessage.trim() || sending}
+                        >
+                            {sending ? (
+                                <Icon name="hourglass-outline" size={24} color="#fff" />
+                            ) : editingMessage ? (
+                                <Icon name="checkmark" size={24} color="#fff" />
+                            ) : (
+                                <Icon name="send" size={24} color="#fff" />
+                            )}
+                        </TouchableOpacity>
+                    )}
+                </View>
+            )}
 
             {/* Photo Editor Modal */}
             <Modal
@@ -1487,6 +1501,23 @@ const styles = StyleSheet.create({
         backgroundColor: '#2A2A2A',
         borderTopWidth: 1,
         borderTopColor: '#333',
+    },
+    blockedInputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 20,
+        paddingVertical: 15,
+        backgroundColor: '#2A2A2A',
+        borderTopWidth: 1,
+        borderTopColor: '#333',
+        gap: 10,
+    },
+    blockedInputText: {
+        color: '#888',
+        fontSize: 13,
+        textAlign: 'center',
+        flex: 1,
     },
     input: {
         flex: 1,
