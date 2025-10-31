@@ -28,48 +28,45 @@ export default function FeedScreen({ navigation }) {
 
     const loadPosts = async () => {
         try {
-            // Get current user's profile to see who they're following
-            const userDoc = await getDocs(collection(db, 'users'));
-            const currentUserData = userDoc.docs.find(doc => doc.id === currentUser.uid)?.data();
-            const following = currentUserData?.following || [];
+            // Get all users from database
+            const usersSnapshot = await getDocs(collection(db, 'users'));
+            const allUsers = usersSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
 
-            if (following.length === 0) {
-                setPosts([]);
-                setLoading(false);
-                return;
-            }
-
-            // Get gallery posts from all followed users using userService
+            // Get gallery posts from all users
             const allPosts = [];
 
-            for (const userId of following) {
+            for (const user of allUsers) {
+                // Skip current user's posts
+                if (user.id === currentUser.uid) continue;
+
                 try {
                     // Get posts from this user's gallery
-                    const userPosts = await userService.getUserGalleryPosts(userId);
-
-                    // Get user info
-                    const userInfo = await userService.getUserProfile(userId);
+                    const userPosts = await userService.getUserGalleryPosts(user.id);
 
                     // Add posts with user info
                     userPosts.forEach(post => {
                         allPosts.push({
                             ...post,
-                            userInfo: userInfo || {}
+                            userInfo: {
+                                uid: user.uid,
+                                displayName: user.displayName,
+                                photoURL: user.photoURL,
+                                email: user.email
+                            }
                         });
                     });
                 } catch (error) {
-                    console.error(`Error loading posts for user ${userId}:`, error);
+                    console.error(`Error loading posts for user ${user.id}:`, error);
                 }
             }
 
-            // Sort all posts by timestamp (newest first)
-            allPosts.sort((a, b) => {
-                const timeA = a.timestamp?.toDate?.() || new Date(0);
-                const timeB = b.timestamp?.toDate?.() || new Date(0);
-                return timeB - timeA;
-            });
+            // Randomize the posts array
+            const shuffledPosts = allPosts.sort(() => Math.random() - 0.5);
 
-            setPosts(allPosts);
+            setPosts(shuffledPosts);
         } catch (error) {
             console.error('Error loading posts:', error);
         } finally {
@@ -166,13 +163,13 @@ export default function FeedScreen({ navigation }) {
                 <View style={styles.emptyContainer}>
                     <Icon name="play-circle-outline" size={80} color="#444" />
                     <Text style={styles.emptyText}>No posts yet</Text>
-                    <Text style={styles.emptySubtext}>Follow users to see their posts</Text>
+                    <Text style={styles.emptySubtext}>Be the first to share photos and videos!</Text>
                     <TouchableOpacity
                         style={styles.findUsersButton}
-                        onPress={() => navigation.navigate('SearchUsers')}
+                        onPress={() => navigation.navigate('Profile')}
                     >
-                        <Icon name="search" size={20} color="#fff" style={{ marginRight: 8 }} />
-                        <Text style={styles.findUsersText}>Find Users</Text>
+                        <Icon name="add-circle" size={20} color="#fff" style={{ marginRight: 8 }} />
+                        <Text style={styles.findUsersText}>Upload to Gallery</Text>
                     </TouchableOpacity>
                 </View>
             ) : (
