@@ -103,7 +103,13 @@ function HomeTabs() {
         }}
       />
       <Tab.Screen name="Calls" component={CallsScreen} />
-      <Tab.Screen name="Feed" component={FeedScreen} />
+      <Tab.Screen
+        name="Feed"
+        component={FeedScreen}
+        options={{
+          tabBarStyle: { display: 'none' },
+        }}
+      />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
