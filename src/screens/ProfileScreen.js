@@ -319,9 +319,14 @@ export default function ProfileScreen({ route, navigation }) {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{profile.displayName}</Text>
         {isOwnProfile && (
-          <TouchableOpacity onPress={handleAddPhoto}>
-            <Icon name="add-circle" size={24} color="#6C5CE7" />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 15 }}>
+            <TouchableOpacity onPress={() => navigation.navigate('NotificationSettings')}>
+              <Icon name="settings-outline" size={24} color="#6C5CE7" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleAddPhoto}>
+              <Icon name="add-circle" size={24} color="#6C5CE7" />
+            </TouchableOpacity>
+          </View>
         )}
         {!isOwnProfile && <View style={{ width: 24 }} />}
       </View>

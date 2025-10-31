@@ -132,6 +132,8 @@ class ChatService {
         mimeType = 'image/heic';
       } else if (['mp4', 'mov', 'avi', 'webm', 'm4v', '3gp'].includes(fileType)) {
         mimeType = `video/${fileType === 'mov' ? 'quicktime' : fileType}`;
+      } else if (['m4a', 'mp3', 'wav', 'aac', 'ogg', 'opus'].includes(fileType)) {
+        mimeType = fileType === 'm4a' ? 'audio/mp4' : fileType === 'mp3' ? 'audio/mpeg' : `audio/${fileType}`;
       }
       
  
@@ -243,6 +245,7 @@ class ChatService {
       // Update chat with last message
       let lastMsgText = '📷 Photo';
       if (mediaType === 'video') lastMsgText = '🎥 Video';
+      if (mediaType === 'audio') lastMsgText = '🎤 Voice message';
       if (mediaType === 'document') lastMsgText = '📄 Document';
 
       await updateDoc(doc(db, 'chats', chatId), {
@@ -684,6 +687,7 @@ class ChatService {
 
       let lastMsgText = '📷 Photo';
       if (mediaType === 'video') lastMsgText = '🎥 Video';
+      if (mediaType === 'audio') lastMsgText = '🎤 Voice message';
       if (mediaType === 'document') lastMsgText = '📄 Document';
 
       await updateDoc(doc(db, 'chats', chatId), {

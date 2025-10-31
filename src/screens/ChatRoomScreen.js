@@ -1,3 +1,4 @@
+import { Audio } from 'expo-av';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
@@ -14,12 +15,17 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    Modal,
+    Dimensions
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { db } from '../config/firebase';
 import authService from '../services/authService';
 import chatService from '../services/chatService';
+import userService from '../services/userService';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function ChatRoomScreen({ route, navigation }) {
     const { chatId, otherUser } = route.params;
@@ -32,8 +38,24 @@ export default function ChatRoomScreen({ route, navigation }) {
     const [replyingTo, setReplyingTo] = useState(null);
     const [otherUserData, setOtherUserData] = useState(otherUser);
     const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
+    const [isBlocked, setIsBlocked] = useState(false);
+    const [isMuted, setIsMuted] = useState(false);
+
+    // Voice message states
+    const [recording, setRecording] = useState(null);
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const [playingSound, setPlayingSound] = useState(null);
+    const [playingMessageId, setPlayingMessageId] = useState(null);
+
+    // Photo editor states
+    const [showPhotoEditor, setShowPhotoEditor] = useState(false);
+    const [editingPhoto, setEditingPhoto] = useState(null);
+    const [editActions, setEditActions] = useState([]);
+
     const flatListRef = useRef(null);
     const typingTimeoutRef = useRef(null);
+    const recordingIntervalRef = useRef(null);
     const currentUser = authService.getCurrentUser();
 
     useEffect(() => {
@@ -65,12 +87,20 @@ export default function ChatRoomScreen({ route, navigation }) {
         // Get user balance
         loadUserBalance();
 
+        // Check block/mute status
+        checkBlockMuteStatus();
+
         return () => {
             unsubscribe();
             // Clear active chat when leaving room
             updateDoc(doc(db, 'users', currentUser.uid), {
                 activeChatId: null
             }).catch(() => {});
+
+            // Stop any playing audio
+            if (playingSound) {
+                playingSound.unloadAsync();
+            }
         };
     }, [chatId]);
 
@@ -116,6 +146,13 @@ export default function ChatRoomScreen({ route, navigation }) {
         };
     }, [chatId, otherUser?.id]);
 
+    const checkBlockMuteStatus = async () => {
+        const blocked = await userService.isUserBlocked(currentUser.uid, otherUser.id);
+        const muted = await userService.isUserMuted(currentUser.uid, otherUser.id);
+        setIsBlocked(blocked);
+        setIsMuted(muted);
+    };
+
     const loadUserBalance = async () => {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
@@ -135,8 +172,9 @@ export default function ChatRoomScreen({ route, navigation }) {
         }
     };
 
-    const handleSend = async () => {
-        if (!newMessage.trim()) return;
+    const handleSend = async (retryMessage = null) => {
+        const messageText = retryMessage || newMessage.trim();
+        if (!messageText) return;
 
         // Clear typing status
         chatService.setTypingStatus(chatId, currentUser.uid, false);
@@ -147,7 +185,7 @@ export default function ChatRoomScreen({ route, navigation }) {
         // Handle editing
         if (editingMessage) {
             setSending(true);
-            const result = await chatService.editMessage(editingMessage.id, newMessage.trim());
+            const result = await chatService.editMessage(editingMessage.id, messageText);
             setSending(false);
 
             if (result.success) {
@@ -165,8 +203,7 @@ export default function ChatRoomScreen({ route, navigation }) {
         }
 
         setSending(true);
-        const messageText = newMessage.trim();
-        setNewMessage('');
+        if (!retryMessage) setNewMessage('');
 
         let result;
         // Handle replying
@@ -191,10 +228,213 @@ export default function ChatRoomScreen({ route, navigation }) {
         setSending(false);
 
         if (!result.success) {
-            Alert.alert('Error', result.error);
-            setNewMessage(messageText);
+            // Show retry option
+            Alert.alert(
+                'Send Failed',
+                result.error,
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Retry',
+                        onPress: () => handleSend(messageText)
+                    }
+                ]
+            );
+            if (!retryMessage) setNewMessage(messageText);
         } else {
             setUserBalance(prev => prev - 1);
+        }
+    };
+
+    // Voice Message Functions
+    const startRecording = async () => {
+        try {
+            const { status } = await Audio.requestPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission needed', 'We need microphone permission to record voice messages');
+                return;
+            }
+
+            await Audio.setAudioModeAsync({
+                allowsRecordingIOS: true,
+                playsInSilentModeIOS: true,
+            });
+
+            const { recording: newRecording } = await Audio.Recording.createAsync(
+                Audio.RecordingOptionsPresets.HIGH_QUALITY
+            );
+
+            setRecording(newRecording);
+            setIsRecording(true);
+            setRecordingDuration(0);
+
+            // Update duration every second
+            recordingIntervalRef.current = setInterval(() => {
+                setRecordingDuration(prev => prev + 1);
+            }, 1000);
+
+        } catch (err) {
+            Alert.alert('Error', 'Failed to start recording');
+        }
+    };
+
+    const stopRecording = async () => {
+        if (!recording) return;
+
+        try {
+            await recording.stopAndUnloadAsync();
+            const uri = recording.getURI();
+
+            setIsRecording(false);
+            setRecording(null);
+
+            if (recordingIntervalRef.current) {
+                clearInterval(recordingIntervalRef.current);
+            }
+
+            if (recordingDuration < 1) {
+                Alert.alert('Too Short', 'Voice message is too short');
+                setRecordingDuration(0);
+                return;
+            }
+
+            // Send voice message
+            if (uri) {
+                await sendVoiceMessage(uri);
+            }
+
+            setRecordingDuration(0);
+        } catch (err) {
+            Alert.alert('Error', 'Failed to stop recording');
+        }
+    };
+
+    const cancelRecording = async () => {
+        if (!recording) return;
+
+        try {
+            await recording.stopAndUnloadAsync();
+            setIsRecording(false);
+            setRecording(null);
+            setRecordingDuration(0);
+
+            if (recordingIntervalRef.current) {
+                clearInterval(recordingIntervalRef.current);
+            }
+        } catch (err) {
+            console.error('Error canceling recording:', err);
+        }
+    };
+
+    const sendVoiceMessage = async (uri) => {
+        if (userBalance < 1) {
+            Alert.alert('Insufficient Coins', 'You need at least 1 coin to send a voice message');
+            return;
+        }
+
+        setSending(true);
+        const result = await chatService.sendMediaMessage(
+            chatId,
+            currentUser.uid,
+            otherUser.id,
+            uri,
+            'audio'
+        );
+        setSending(false);
+
+        if (!result.success) {
+            Alert.alert('Error', result.error);
+        } else {
+            setUserBalance(prev => prev - 1);
+        }
+    };
+
+    const playVoiceMessage = async (messageId, audioUrl) => {
+        try {
+            // Stop current playing sound if any
+            if (playingSound) {
+                await playingSound.unloadAsync();
+                setPlayingSound(null);
+                setPlayingMessageId(null);
+            }
+
+            // If same message, just stop
+            if (playingMessageId === messageId) {
+                return;
+            }
+
+            const { sound } = await Audio.Sound.createAsync(
+                { uri: audioUrl },
+                { shouldPlay: true }
+            );
+
+            setPlayingSound(sound);
+            setPlayingMessageId(messageId);
+
+            sound.setOnPlaybackStatusUpdate((status) => {
+                if (status.didJustFinish) {
+                    setPlayingMessageId(null);
+                    setPlayingSound(null);
+                    sound.unloadAsync();
+                }
+            });
+
+        } catch (err) {
+            Alert.alert('Error', 'Failed to play voice message');
+        }
+    };
+
+    const formatDuration = (seconds) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Photo Editor Functions
+    const openPhotoEditor = (imageUri) => {
+        setEditingPhoto(imageUri);
+        setEditActions([]);
+        setShowPhotoEditor(true);
+    };
+
+    const applyPhotoEdits = async () => {
+        if (!editingPhoto) return;
+
+        try {
+            let manipResult = await ImageManipulator.manipulateAsync(
+                editingPhoto,
+                editActions,
+                { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+            );
+
+            setShowPhotoEditor(false);
+
+            // Send the edited photo
+            if (userBalance < 1) {
+                Alert.alert('Insufficient Coins', 'You need at least 1 coin to send media');
+                return;
+            }
+
+            setSending(true);
+            const sendResult = await chatService.sendMediaMessage(
+                chatId,
+                currentUser.uid,
+                otherUser.id,
+                manipResult.uri,
+                'image'
+            );
+            setSending(false);
+
+            if (!sendResult.success) {
+                Alert.alert('Error', sendResult.error);
+            } else {
+                setUserBalance(prev => prev - 1);
+            }
+
+            setEditingPhoto(null);
+            setEditActions([]);
+        } catch (err) {
+            Alert.alert('Error', 'Failed to edit photo');
         }
     };
 
@@ -305,53 +545,70 @@ export default function ChatRoomScreen({ route, navigation }) {
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'], // Fixed: Use array instead of MediaTypeOptions
+            mediaTypes: ['images'],
             quality: 0.8,
             allowsEditing: false,
         });
 
         if (!result.canceled) {
-            if (userBalance < 1) {
-                Alert.alert('Insufficient Coins', 'You need at least 1 coin to send media');
-                return;
+            // Ask if user wants to edit before sending
+            Alert.alert(
+                'Send Photo',
+                'Would you like to edit this photo before sending?',
+                [
+                    {
+                        text: 'Send Now',
+                        onPress: () => sendImage(result.assets[0].uri)
+                    },
+                    {
+                        text: 'Edit',
+                        onPress: () => openPhotoEditor(result.assets[0].uri)
+                    },
+                    { text: 'Cancel', style: 'cancel' }
+                ]
+            );
+        }
+    };
+
+    const sendImage = async (imageUri) => {
+        if (userBalance < 1) {
+            Alert.alert('Insufficient Coins', 'You need at least 1 coin to send media');
+            return;
+        }
+
+        setSending(true);
+
+        try {
+            let uri = imageUri;
+
+            // Convert HEIC/HEIF to JPEG if needed
+            if (uri.toLowerCase().endsWith('.heic') ||
+                uri.toLowerCase().endsWith('.heif')) {
+                const manipResult = await ImageManipulator.manipulateAsync(
+                    uri,
+                    [],
+                    { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+                );
+                uri = manipResult.uri;
             }
 
-            setSending(true);
-            
-            try {
-                let imageUri = result.assets[0].uri;
-                
-                // Convert HEIC/HEIF to JPEG if needed
-                if (imageUri.toLowerCase().endsWith('.heic') || 
-                    imageUri.toLowerCase().endsWith('.heif')) {
-                  
-                    const manipResult = await ImageManipulator.manipulateAsync(
-                        imageUri,
-                        [],
-                        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-                    );
-                    imageUri = manipResult.uri;
-                   
-                }
-                
-                const sendResult = await chatService.sendMediaMessage(
-                    chatId,
-                    currentUser.uid,
-                    otherUser.id,
-                    imageUri,
-                    'image'
-                );
-                
-                if (!sendResult.success) {
-                    Alert.alert('Error', sendResult.error);
-                } else {
-                    setUserBalance(prev => prev - 1);
-                }
-            } catch (error) {
-                Alert.alert('Error', 'Failed to send image');
-            } finally {
-                setSending(false);
+            const sendResult = await chatService.sendMediaMessage(
+                chatId,
+                currentUser.uid,
+                otherUser.id,
+                uri,
+                'image'
+            );
+
+            if (!sendResult.success) {
+                Alert.alert('Error', sendResult.error);
+            } else {
+                setUserBalance(prev => prev - 1);
             }
+        } catch (error) {
+            Alert.alert('Error', 'Failed to send image');
+        } finally {
+            setSending(false);
         }
     };
 
@@ -363,7 +620,7 @@ export default function ChatRoomScreen({ route, navigation }) {
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['videos'], // Fixed: Use array instead of MediaTypeOptions
+            mediaTypes: ['videos'],
             quality: 0.8,
             allowsEditing: false,
         });
@@ -405,47 +662,69 @@ export default function ChatRoomScreen({ route, navigation }) {
         });
 
         if (!result.canceled) {
-            if (userBalance < 1) {
-                Alert.alert('Insufficient Coins', 'You need at least 1 coin to send media');
-                return;
-            }
+            // Ask if user wants to edit before sending
+            Alert.alert(
+                'Send Photo',
+                'Would you like to edit this photo before sending?',
+                [
+                    {
+                        text: 'Send Now',
+                        onPress: () => sendImage(result.assets[0].uri)
+                    },
+                    {
+                        text: 'Edit',
+                        onPress: () => openPhotoEditor(result.assets[0].uri)
+                    },
+                    { text: 'Cancel', style: 'cancel' }
+                ]
+            );
+        }
+    };
 
-            setSending(true);
-            
-            try {
-                let imageUri = result.assets[0].uri;
-                
-                // Convert HEIC/HEIF to JPEG if needed
-                if (imageUri.toLowerCase().endsWith('.heic') || 
-                    imageUri.toLowerCase().endsWith('.heif')) {
-                   
-                    const manipResult = await ImageManipulator.manipulateAsync(
-                        imageUri,
-                        [],
-                        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
-                    );
-                    imageUri = manipResult.uri;
-                    
-                }
-                
-                const sendResult = await chatService.sendMediaMessage(
-                    chatId,
-                    currentUser.uid,
-                    otherUser.id,
-                    imageUri,
-                    'image'
-                );
-                
-                if (!sendResult.success) {
-                    Alert.alert('Error', sendResult.error);
-                } else {
-                    setUserBalance(prev => prev - 1);
-                }
-            } catch (error) {
-                Alert.alert('Error', 'Failed to send photo');
-            } finally {
-                setSending(false);
-            }
+    const handleGIFPicker = () => {
+        // Simple GIF picker with predefined GIFs (in a real app, use GIPHY API)
+        const popularGIFs = [
+            { name: '👍 Thumbs Up', url: 'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif' },
+            { name: '😂 Laughing', url: 'https://media.giphy.com/media/3oEjI6SIIHBdRxXI40/giphy.gif' },
+            { name: '❤️ Heart', url: 'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExOWR5NzJpZXdhNWY1cXhub2hvcm52dXppcm50ZWN5bWw0MmwxZXUzaSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/M90mJvfWfd5mbUuULX/giphy.gif' },
+            { name: '🎉 Party', url: 'https://media.giphy.com/media/g9582DNuQppxC/giphy.gif' },
+            { name: '😴 Sleeping', url: 'https://media.giphy.com/media/krP2NRkLqnKEg/giphy.gif' },
+            { name: '🤔 Thinking', url: 'https://media.giphy.com/media/3o7btPCcdNniyf0ArS/giphy.gif' },
+        ];
+
+        Alert.alert(
+            'Send GIF',
+            'Choose a GIF',
+            [
+                ...popularGIFs.map(gif => ({
+                    text: gif.name,
+                    onPress: () => sendGIF(gif.url)
+                })),
+                { text: 'Cancel', style: 'cancel' }
+            ]
+        );
+    };
+
+    const sendGIF = async (gifUrl) => {
+        if (userBalance < 1) {
+            Alert.alert('Insufficient Coins', 'You need at least 1 coin to send a GIF');
+            return;
+        }
+
+        setSending(true);
+        const result = await chatService.sendMediaMessage(
+            chatId,
+            currentUser.uid,
+            otherUser.id,
+            gifUrl,
+            'image'
+        );
+        setSending(false);
+
+        if (!result.success) {
+            Alert.alert('Error', result.error);
+        } else {
+            setUserBalance(prev => prev - 1);
         }
     };
 
@@ -457,8 +736,94 @@ export default function ChatRoomScreen({ route, navigation }) {
                 { text: 'Take Photo', onPress: handleTakePhoto },
                 { text: 'Choose Image', onPress: handleImagePick },
                 { text: 'Choose Video', onPress: handleVideoPick },
+                { text: 'Send GIF', onPress: handleGIFPicker },
                 { text: 'Cancel', style: 'cancel' }
             ]
+        );
+    };
+
+    const handleUserOptions = () => {
+        Alert.alert(
+            otherUserData.displayName,
+            'User Options',
+            [
+                {
+                    text: 'View Profile',
+                    onPress: () => navigation.navigate('Profile', { userId: otherUser.id })
+                },
+                {
+                    text: isBlocked ? 'Unblock User' : 'Block User',
+                    onPress: () => handleBlockToggle()
+                },
+                {
+                    text: isMuted ? 'Unmute User' : 'Mute User',
+                    onPress: () => handleMuteToggle()
+                },
+                {
+                    text: 'Report User',
+                    style: 'destructive',
+                    onPress: () => handleReport()
+                },
+                { text: 'Cancel', style: 'cancel' }
+            ]
+        );
+    };
+
+    const handleBlockToggle = async () => {
+        const result = isBlocked
+            ? await userService.unblockUser(currentUser.uid, otherUser.id)
+            : await userService.blockUser(currentUser.uid, otherUser.id);
+
+        if (result.success) {
+            setIsBlocked(!isBlocked);
+            Alert.alert('Success', isBlocked ? 'User unblocked' : 'User blocked');
+        } else {
+            Alert.alert('Error', result.error);
+        }
+    };
+
+    const handleMuteToggle = async () => {
+        const result = isMuted
+            ? await userService.unmuteUser(currentUser.uid, otherUser.id)
+            : await userService.muteUser(currentUser.uid, otherUser.id);
+
+        if (result.success) {
+            setIsMuted(!isMuted);
+            Alert.alert('Success', isMuted ? 'User unmuted' : 'User muted');
+        } else {
+            Alert.alert('Error', result.error);
+        }
+    };
+
+    const handleReport = () => {
+        Alert.prompt(
+            'Report User',
+            'Please provide a reason for reporting this user:',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Submit',
+                    onPress: async (reason) => {
+                        if (!reason || !reason.trim()) {
+                            Alert.alert('Error', 'Please provide a reason');
+                            return;
+                        }
+
+                        const result = await userService.reportUser(
+                            currentUser.uid,
+                            otherUser.id,
+                            reason.trim()
+                        );
+
+                        if (result.success) {
+                            Alert.alert('Success', 'User reported. Thank you for helping keep our community safe.');
+                        } else {
+                            Alert.alert('Error', result.error);
+                        }
+                    }
+                }
+            ],
+            'plain-text'
         );
     };
 
@@ -466,6 +831,7 @@ export default function ChatRoomScreen({ route, navigation }) {
         const isMyMessage = item.senderId === currentUser.uid;
         const messageTime = item.timestamp?.toDate?.();
         const hasMedia = item.mediaUrl && item.mediaType;
+        const isVoiceMessage = item.mediaType === 'audio';
         const reactions = item.reactions || {};
         const hasReactions = Object.keys(reactions).length > 0;
 
@@ -525,7 +891,7 @@ export default function ChatRoomScreen({ route, navigation }) {
                                     </Text>
                                     <Text style={styles.replyText} numberOfLines={1}>
                                         {item.replyTo.mediaType
-                                            ? `${item.replyTo.mediaType === 'image' ? '📷 Photo' : item.replyTo.mediaType === 'video' ? '🎥 Video' : '📄 Document'}`
+                                            ? `${item.replyTo.mediaType === 'image' ? '📷 Photo' : item.replyTo.mediaType === 'video' ? '🎥 Video' : item.replyTo.mediaType === 'audio' ? '🎤 Voice message' : '📄 Document'}`
                                             : item.replyTo.message || 'Message'}
                                     </Text>
                                 </View>
@@ -533,7 +899,34 @@ export default function ChatRoomScreen({ route, navigation }) {
                         )}
 
                         {/* Message Content */}
-                        {hasMedia ? (
+                        {isVoiceMessage ? (
+                            <TouchableOpacity
+                                style={styles.voiceMessageContainer}
+                                onPress={() => playVoiceMessage(item.id, item.mediaUrl)}
+                            >
+                                <Icon
+                                    name={playingMessageId === item.id ? "pause-circle" : "play-circle"}
+                                    size={32}
+                                    color={isMyMessage ? "#fff" : "#6C5CE7"}
+                                />
+                                <View style={styles.voiceWaveform}>
+                                    <View style={styles.waveBar} />
+                                    <View style={[styles.waveBar, styles.waveBarTall]} />
+                                    <View style={styles.waveBar} />
+                                    <View style={[styles.waveBar, styles.waveBarTall]} />
+                                    <View style={styles.waveBar} />
+                                    <View style={[styles.waveBar, styles.waveBarShort]} />
+                                    <View style={[styles.waveBar, styles.waveBarTall]} />
+                                    <View style={styles.waveBar} />
+                                </View>
+                                <Text style={[
+                                    styles.voiceDuration,
+                                    isMyMessage ? styles.myMessageText : styles.theirMessageText
+                                ]}>
+                                    {playingMessageId === item.id ? '⏸' : '🎤'}
+                                </Text>
+                            </TouchableOpacity>
+                        ) : hasMedia ? (
                             <TouchableOpacity
                                 onPress={() => navigation.navigate('MediaViewer', {
                                     mediaUrl: item.mediaUrl,
@@ -626,7 +1019,10 @@ export default function ChatRoomScreen({ route, navigation }) {
                     <Icon name="arrow-back" size={24} color="#fff" />
                 </TouchableOpacity>
 
-                <View style={styles.headerCenter}>
+                <TouchableOpacity
+                    style={styles.headerCenter}
+                    onPress={() => navigation.navigate('Profile', { userId: otherUser.id })}
+                >
                     {otherUserData.photoURL ? (
                         <Image source={{ uri: otherUserData.photoURL }} style={styles.headerAvatar} />
                     ) : (
@@ -651,10 +1047,13 @@ export default function ChatRoomScreen({ route, navigation }) {
                             )}
                         </Text>
                     </View>
-                </View>
+                </TouchableOpacity>
 
                 <View style={styles.headerRight}>
                     <Text style={styles.coinsText}>{userBalance} 💰</Text>
+                    <TouchableOpacity onPress={handleUserOptions} style={styles.menuButton}>
+                        <Icon name="ellipsis-vertical" size={20} color="#fff" />
+                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -694,6 +1093,17 @@ export default function ChatRoomScreen({ route, navigation }) {
                 </View>
             )}
 
+            {/* Recording indicator */}
+            {isRecording && (
+                <View style={styles.recordingIndicator}>
+                    <View style={styles.recordingDot} />
+                    <Text style={styles.recordingText}>Recording... {formatDuration(recordingDuration)}</Text>
+                    <TouchableOpacity onPress={cancelRecording} style={styles.cancelRecordButton}>
+                        <Text style={styles.cancelRecordText}>Cancel</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+
             {/* Editing/Replying Banner */}
             {(editingMessage || replyingTo) && (
                 <View style={styles.actionBanner}>
@@ -711,7 +1121,7 @@ export default function ChatRoomScreen({ route, navigation }) {
                                 {editingMessage
                                     ? editingMessage.message
                                     : replyingTo?.mediaType
-                                        ? `${replyingTo.mediaType === 'image' ? '📷 Photo' : replyingTo.mediaType === 'video' ? '🎥 Video' : '📄 Document'}`
+                                        ? `${replyingTo.mediaType === 'image' ? '📷 Photo' : replyingTo.mediaType === 'video' ? '🎥 Video' : replyingTo.mediaType === 'audio' ? '🎤 Voice message' : '📄 Document'}`
                                         : replyingTo?.message || 'Message'}
                             </Text>
                         </View>
@@ -769,23 +1179,104 @@ export default function ChatRoomScreen({ route, navigation }) {
                     }}
                     multiline
                     maxLength={500}
-                    editable={!sending}
+                    editable={!sending && !isRecording}
                 />
 
-                <TouchableOpacity
-                    style={[styles.sendButton, (!newMessage.trim() || sending) && styles.sendButtonDisabled]}
-                    onPress={handleSend}
-                    disabled={!newMessage.trim() || sending}
-                >
-                    {sending ? (
-                        <Icon name="hourglass-outline" size={24} color="#fff" />
-                    ) : editingMessage ? (
-                        <Icon name="checkmark" size={24} color="#fff" />
-                    ) : (
-                        <Icon name="send" size={24} color="#fff" />
-                    )}
-                </TouchableOpacity>
+                {/* Voice Message Button (when no text) */}
+                {!newMessage.trim() && !editingMessage && (
+                    <TouchableOpacity
+                        style={[styles.voiceButton, isRecording && styles.voiceButtonRecording]}
+                        onPressIn={startRecording}
+                        onPressOut={stopRecording}
+                        disabled={sending}
+                    >
+                        <Icon name="mic" size={24} color="#fff" />
+                    </TouchableOpacity>
+                )}
+
+                {/* Send Button (when has text) */}
+                {(newMessage.trim() || editingMessage) && (
+                    <TouchableOpacity
+                        style={[styles.sendButton, (!newMessage.trim() || sending) && styles.sendButtonDisabled]}
+                        onPress={() => handleSend()}
+                        disabled={!newMessage.trim() || sending}
+                    >
+                        {sending ? (
+                            <Icon name="hourglass-outline" size={24} color="#fff" />
+                        ) : editingMessage ? (
+                            <Icon name="checkmark" size={24} color="#fff" />
+                        ) : (
+                            <Icon name="send" size={24} color="#fff" />
+                        )}
+                    </TouchableOpacity>
+                )}
             </View>
+
+            {/* Photo Editor Modal */}
+            <Modal
+                visible={showPhotoEditor}
+                transparent={false}
+                animationType="slide"
+            >
+                <View style={styles.editorContainer}>
+                    <View style={styles.editorHeader}>
+                        <TouchableOpacity onPress={() => setShowPhotoEditor(false)}>
+                            <Text style={styles.editorCancel}>Cancel</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.editorTitle}>Edit Photo</Text>
+                        <TouchableOpacity onPress={applyPhotoEdits}>
+                            <Text style={styles.editorDone}>Send</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    {editingPhoto && (
+                        <Image
+                            source={{ uri: editingPhoto }}
+                            style={styles.editorImage}
+                            resizeMode="contain"
+                        />
+                    )}
+
+                    <View style={styles.editorTools}>
+                        <TouchableOpacity
+                            style={styles.editorTool}
+                            onPress={() => {
+                                setEditActions([...editActions, { rotate: 90 }]);
+                            }}
+                        >
+                            <Icon name="refresh" size={24} color="#fff" />
+                            <Text style={styles.editorToolText}>Rotate</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.editorTool}
+                            onPress={() => {
+                                setEditActions([...editActions, { flip: ImageManipulator.FlipType.Horizontal }]);
+                            }}
+                        >
+                            <Icon name="swap-horizontal" size={24} color="#fff" />
+                            <Text style={styles.editorToolText}>Flip</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.editorTool}
+                            onPress={() => {
+                                setEditActions([...editActions, {
+                                    crop: {
+                                        originX: 0,
+                                        originY: 0,
+                                        width: 800,
+                                        height: 800
+                                    }
+                                }]);
+                            }}
+                        >
+                            <Icon name="crop" size={24} color="#fff" />
+                            <Text style={styles.editorToolText}>Square</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </KeyboardAvoidingView>
     );
 }
@@ -830,6 +1321,7 @@ const styles = StyleSheet.create({
     },
     headerInfo: {
         marginLeft: 12,
+        flex: 1,
     },
     headerName: {
         fontSize: 16,
@@ -852,6 +1344,9 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         color: '#FFD700',
+    },
+    menuButton: {
+        marginTop: 4,
     },
     messagesList: {
         paddingHorizontal: 15,
@@ -966,6 +1461,17 @@ const styles = StyleSheet.create({
     sendButtonDisabled: {
         backgroundColor: '#444',
     },
+    voiceButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#6C5CE7',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    voiceButtonRecording: {
+        backgroundColor: '#FF4444',
+    },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -1020,7 +1526,7 @@ const styles = StyleSheet.create({
         width: 200,
         height: 200,
         borderRadius: 12,
-        backgroundColor: '#333', // Placeholder color while loading
+        backgroundColor: '#333',
     },
     videoPreview: {
         position: 'relative',
@@ -1043,6 +1549,37 @@ const styles = StyleSheet.create({
         marginLeft: 8,
         color: '#888',
         fontSize: 12,
+    },
+    recordingIndicator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        backgroundColor: '#FF4444',
+    },
+    recordingDot: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: '#fff',
+        marginRight: 10,
+    },
+    recordingText: {
+        color: '#fff',
+        fontSize: 14,
+        flex: 1,
+        fontWeight: '600',
+    },
+    cancelRecordButton: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+    },
+    cancelRecordText: {
+        color: '#FF4444',
+        fontSize: 12,
+        fontWeight: '600',
     },
     deletedMessageBubble: {
         backgroundColor: '#2A2A2A',
@@ -1146,5 +1683,79 @@ const styles = StyleSheet.create({
     },
     actionBannerClose: {
         padding: 5,
+    },
+    voiceMessageContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 4,
+    },
+    voiceWaveform: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: 10,
+        flex: 1,
+    },
+    waveBar: {
+        width: 3,
+        height: 16,
+        backgroundColor: 'rgba(255,255,255,0.5)',
+        marginHorizontal: 2,
+        borderRadius: 2,
+    },
+    waveBarTall: {
+        height: 24,
+    },
+    waveBarShort: {
+        height: 10,
+    },
+    voiceDuration: {
+        fontSize: 14,
+        marginLeft: 8,
+    },
+    editorContainer: {
+        flex: 1,
+        backgroundColor: '#000',
+    },
+    editorHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingTop: 50,
+        paddingHorizontal: 20,
+        paddingBottom: 15,
+        backgroundColor: '#1A1A1A',
+    },
+    editorCancel: {
+        color: '#888',
+        fontSize: 16,
+    },
+    editorTitle: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: '600',
+    },
+    editorDone: {
+        color: '#6C5CE7',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    editorImage: {
+        flex: 1,
+        width: SCREEN_WIDTH,
+    },
+    editorTools: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        paddingVertical: 20,
+        backgroundColor: '#1A1A1A',
+    },
+    editorTool: {
+        alignItems: 'center',
+        padding: 10,
+    },
+    editorToolText: {
+        color: '#fff',
+        fontSize: 12,
+        marginTop: 5,
     },
 });

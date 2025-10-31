@@ -24,6 +24,7 @@ import FeedScreen from './src/screens/FeedScreen';
 import FollowersListScreen from './src/screens/FollowersListScreen';
 import MediaViewerScreen from './src/screens/MediaViewerScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
+import NotificationSettingsScreen from './src/screens/NotificationSettingsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import SearchUsersScreen from './src/screens/SearchUsersScreen';
 
@@ -256,6 +257,7 @@ export default function App() {
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="FollowersList" component={FollowersListScreen} />
             <Stack.Screen name="Notifications" component={NotificationsScreen} />
+            <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
             <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
           </>
         )}
