@@ -34,9 +34,12 @@ export default function ChatListScreen({ navigation }) {
     if (query.trim() === '') {
       setFilteredChats(chats);
     } else {
-      const filtered = chats.filter((chat) =>
-        chat.otherUser?.displayName?.toLowerCase().includes(query.toLowerCase())
-      );
+      const filtered = chats.filter((chat) => {
+        if (chat.isGroup) {
+          return chat.groupName?.toLowerCase().includes(query.toLowerCase());
+        }
+        return chat.otherUser?.displayName?.toLowerCase().includes(query.toLowerCase());
+      });
       setFilteredChats(filtered);
     }
   };
@@ -54,6 +57,12 @@ export default function ChatListScreen({ navigation }) {
   const renderChatItem = ({ item }) => {
     const unreadCount = item.unreadCount?.[currentUser?.uid] || 0;
     const lastMessageTime = item.lastMessageTime?.toDate?.();
+    const isGroup = item.isGroup;
+
+    // For groups, prepare group info
+    const displayName = isGroup ? item.groupName : item.otherUser?.displayName;
+    const displayPhoto = isGroup ? item.groupPhoto : item.otherUser?.photoURL;
+    const memberCount = isGroup ? item.participants?.length : 0;
 
     return (
       <TouchableOpacity
@@ -62,28 +71,42 @@ export default function ChatListScreen({ navigation }) {
           navigation.navigate('ChatRoom', {
             chatId: item.chatId,
             otherUser: item.otherUser,
+            isGroup: isGroup,
+            groupName: item.groupName,
+            groupPhoto: item.groupPhoto,
+            participants: item.participants,
+            admin: item.admin
           })
         }
       >
         <View style={styles.avatarContainer}>
-          {item.otherUser?.photoURL ? (
+          {displayPhoto ? (
             <Image
-              source={{ uri: item.otherUser.photoURL }}
+              source={{ uri: displayPhoto }}
               style={styles.avatar}
             />
           ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarText}>
-                {getInitials(item.otherUser?.displayName)}
-              </Text>
+            <View style={[styles.avatarPlaceholder, isGroup && styles.groupAvatarPlaceholder]}>
+              {isGroup ? (
+                <Icon name="people" size={24} color="#fff" />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {getInitials(displayName)}
+                </Text>
+              )}
             </View>
           )}
-          {item.otherUser?.isOnline && <View style={styles.onlineIndicator} />}
+          {!isGroup && item.otherUser?.isOnline && <View style={styles.onlineIndicator} />}
         </View>
 
         <View style={styles.chatInfo}>
           <View style={styles.chatHeader}>
-            <Text style={styles.chatName}>{item.otherUser?.displayName}</Text>
+            <View style={styles.chatNameContainer}>
+              <Text style={styles.chatName}>{displayName}</Text>
+              {isGroup && (
+                <Text style={styles.memberCount}>({memberCount})</Text>
+              )}
+            </View>
             {lastMessageTime && (
               <Text style={styles.timestamp}>
                 {format(lastMessageTime, 'HH:mm')}
@@ -109,9 +132,17 @@ export default function ChatListScreen({ navigation }) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Chats</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('SearchUsers')}>
-          <Icon name="add-circle" size={28} color="#6C5CE7" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CreateGroup')}
+            style={styles.headerButton}
+          >
+            <Icon name="people" size={24} color="#6C5CE7" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('SearchUsers')}>
+            <Icon name="add-circle" size={28} color="#6C5CE7" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.searchContainer}>
@@ -169,6 +200,13 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    marginRight: 15,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -242,10 +280,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 5,
   },
+  chatNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   chatName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  memberCount: {
+    fontSize: 13,
+    color: '#888',
+    marginLeft: 5,
+  },
+  groupAvatarPlaceholder: {
+    backgroundColor: '#6C5CE7',
   },
   timestamp: {
     fontSize: 12,

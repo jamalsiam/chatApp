@@ -27,6 +27,8 @@ export default function ChatRoomScreen({ route, navigation }) {
     const [newMessage, setNewMessage] = useState('');
     const [sending, setSending] = useState(false);
     const [userBalance, setUserBalance] = useState(0);
+    const [editingMessage, setEditingMessage] = useState(null);
+    const [replyingTo, setReplyingTo] = useState(null);
     const flatListRef = useRef(null);
     const currentUser = authService.getCurrentUser();
 
@@ -55,6 +57,21 @@ export default function ChatRoomScreen({ route, navigation }) {
     const handleSend = async () => {
         if (!newMessage.trim()) return;
 
+        // Handle editing
+        if (editingMessage) {
+            setSending(true);
+            const result = await chatService.editMessage(editingMessage.id, newMessage.trim());
+            setSending(false);
+
+            if (result.success) {
+                setNewMessage('');
+                setEditingMessage(null);
+            } else {
+                Alert.alert('Error', result.error);
+            }
+            return;
+        }
+
         if (userBalance < 1) {
             Alert.alert('Insufficient Coins', 'You need at least 1 coin to send a message');
             return;
@@ -64,22 +81,123 @@ export default function ChatRoomScreen({ route, navigation }) {
         const messageText = newMessage.trim();
         setNewMessage('');
 
-        const result = await chatService.sendMessage(
-            chatId,
-            currentUser.uid,
-            otherUser.id,
-            messageText
-        );
+        let result;
+        // Handle replying
+        if (replyingTo) {
+            result = await chatService.sendReplyMessage(
+                chatId,
+                currentUser.uid,
+                otherUser.id,
+                messageText,
+                replyingTo
+            );
+            setReplyingTo(null);
+        } else {
+            result = await chatService.sendMessage(
+                chatId,
+                currentUser.uid,
+                otherUser.id,
+                messageText
+            );
+        }
 
         setSending(false);
 
         if (!result.success) {
             Alert.alert('Error', result.error);
-            setNewMessage(messageText); // Restore message on error
+            setNewMessage(messageText);
         } else {
-            // Update balance
             setUserBalance(prev => prev - 1);
         }
+    };
+
+    const handleLongPress = (message) => {
+        if (message.deleted) return;
+
+        const isMyMessage = message.senderId === currentUser.uid;
+        const options = ['Reply', 'React'];
+
+        if (isMyMessage && !message.mediaUrl) {
+            options.push('Edit', 'Delete');
+        } else if (isMyMessage) {
+            options.push('Delete');
+        }
+
+        options.push('Cancel');
+
+        Alert.alert('Message Options', '', [
+            {
+                text: 'Reply',
+                onPress: () => setReplyingTo(message)
+            },
+            {
+                text: 'React',
+                onPress: () => handleReactionPicker(message)
+            },
+            ...(isMyMessage && !message.mediaUrl ? [{
+                text: 'Edit',
+                onPress: () => handleEdit(message)
+            }] : []),
+            ...(isMyMessage ? [{
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () => handleDelete(message)
+            }] : []),
+            {
+                text: 'Cancel',
+                style: 'cancel'
+            }
+        ]);
+    };
+
+    const handleEdit = (message) => {
+        setEditingMessage(message);
+        setNewMessage(message.message);
+        setReplyingTo(null);
+    };
+
+    const handleDelete = (message) => {
+        Alert.alert(
+            'Delete Message',
+            'Are you sure you want to delete this message?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        const result = await chatService.deleteMessage(message.id, chatId);
+                        if (!result.success) {
+                            Alert.alert('Error', result.error);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleReactionPicker = (message) => {
+        const reactions = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+        Alert.alert('React to Message', 'Choose a reaction', [
+            ...reactions.map(emoji => ({
+                text: emoji,
+                onPress: () => handleReaction(message, emoji)
+            })),
+            { text: 'Cancel', style: 'cancel' }
+        ]);
+    };
+
+    const handleReaction = async (message, reaction) => {
+        await chatService.addReaction(message.id, currentUser.uid, reaction);
+    };
+
+    const cancelEdit = () => {
+        setEditingMessage(null);
+        setNewMessage('');
+    };
+
+    const cancelReply = () => {
+        setReplyingTo(null);
     };
 
     const getInitials = (name) => {
@@ -263,14 +381,37 @@ export default function ChatRoomScreen({ route, navigation }) {
         const isMyMessage = item.senderId === currentUser.uid;
         const messageTime = item.timestamp?.toDate?.();
         const hasMedia = item.mediaUrl && item.mediaType;
+        const reactions = item.reactions || {};
+        const hasReactions = Object.keys(reactions).length > 0;
 
-     
+        // Show deleted message
+        if (item.deleted) {
+            return (
+                <View style={[
+                    styles.messageContainer,
+                    isMyMessage ? styles.myMessageContainer : styles.theirMessageContainer
+                ]}>
+                    <View style={[
+                        styles.messageBubble,
+                        styles.deletedMessageBubble
+                    ]}>
+                        <Text style={styles.deletedMessageText}>
+                            <Icon name="trash-outline" size={14} /> This message was deleted
+                        </Text>
+                    </View>
+                </View>
+            );
+        }
 
         return (
-            <View style={[
-                styles.messageContainer,
-                isMyMessage ? styles.myMessageContainer : styles.theirMessageContainer
-            ]}>
+            <TouchableOpacity
+                onLongPress={() => handleLongPress(item)}
+                delayLongPress={300}
+                style={[
+                    styles.messageContainer,
+                    isMyMessage ? styles.myMessageContainer : styles.theirMessageContainer
+                ]}
+            >
                 {!isMyMessage && (
                     <View style={styles.avatarSmall}>
                         {otherUser.photoURL ? (
@@ -283,59 +424,97 @@ export default function ChatRoomScreen({ route, navigation }) {
                     </View>
                 )}
 
-                <View style={[
-                    styles.messageBubble,
-                    isMyMessage ? styles.myMessageBubble : styles.theirMessageBubble,
-                    hasMedia && styles.mediaBubble
-                ]}>
-                    {hasMedia ? (
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('MediaViewer', {
-                                mediaUrl: item.mediaUrl,
-                                mediaType: item.mediaType
-                            })}
-                        >
-                            {item.mediaType === 'image' ? (
-                                <Image
-                                    source={{ uri: item.mediaUrl }}
-                                    style={styles.mediaPreview}
-                                    resizeMode="cover"
-                                    
-                                    onError={(error) => {
-                                     
-                                    }}
-                                />
-                            ) : (
-                                <View style={styles.videoPreview}>
+                <View style={{ flex: 1 }}>
+                    <View style={[
+                        styles.messageBubble,
+                        isMyMessage ? styles.myMessageBubble : styles.theirMessageBubble,
+                        hasMedia && styles.mediaBubble
+                    ]}>
+                        {/* Reply Preview */}
+                        {item.replyTo && (
+                            <View style={styles.replyPreview}>
+                                <View style={styles.replyLine} />
+                                <View style={styles.replyContent}>
+                                    <Text style={styles.replyName}>
+                                        {item.replyTo.senderId === currentUser.uid ? 'You' : otherUser.displayName}
+                                    </Text>
+                                    <Text style={styles.replyText} numberOfLines={1}>
+                                        {item.replyTo.mediaType ? `${item.replyTo.mediaType === 'image' ? '📷' : '🎥'} ${item.replyTo.mediaType}` : item.replyTo.message}
+                                    </Text>
+                                </View>
+                            </View>
+                        )}
+
+                        {/* Message Content */}
+                        {hasMedia ? (
+                            <TouchableOpacity
+                                onPress={() => navigation.navigate('MediaViewer', {
+                                    mediaUrl: item.mediaUrl,
+                                    mediaType: item.mediaType
+                                })}
+                            >
+                                {item.mediaType === 'image' ? (
                                     <Image
                                         source={{ uri: item.mediaUrl }}
                                         style={styles.mediaPreview}
                                         resizeMode="cover"
                                     />
-                                    <View style={styles.playIconOverlay}>
-                                        <Icon name="play-circle" size={50} color="#fff" />
+                                ) : (
+                                    <View style={styles.videoPreview}>
+                                        <Image
+                                            source={{ uri: item.mediaUrl }}
+                                            style={styles.mediaPreview}
+                                            resizeMode="cover"
+                                        />
+                                        <View style={styles.playIconOverlay}>
+                                            <Icon name="play-circle" size={50} color="#fff" />
+                                        </View>
                                     </View>
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                    ) : (
-                        <Text style={[
-                            styles.messageText,
-                            isMyMessage ? styles.myMessageText : styles.theirMessageText
-                        ]}>
-                            {item.message}
-                        </Text>
-                    )}
+                                )}
+                            </TouchableOpacity>
+                        ) : (
+                            <Text style={[
+                                styles.messageText,
+                                isMyMessage ? styles.myMessageText : styles.theirMessageText
+                            ]}>
+                                {item.message}
+                            </Text>
+                        )}
 
-                    <Text style={[
-                        styles.messageTime,
-                        isMyMessage ? styles.myMessageTime : styles.theirMessageTime
-                    ]}>
-                        {messageTime ? format(messageTime, 'HH:mm') : ''}
-                        {isMyMessage && item.read && ' ✓✓'}
-                    </Text>
+                        {/* Time and Status */}
+                        <Text style={[
+                            styles.messageTime,
+                            isMyMessage ? styles.myMessageTime : styles.theirMessageTime
+                        ]}>
+                            {messageTime ? format(messageTime, 'HH:mm') : ''}
+                            {item.edited && ' (edited)'}
+                            {isMyMessage && item.read && ' ✓✓'}
+                        </Text>
+                    </View>
+
+                    {/* Reactions */}
+                    {hasReactions && (
+                        <View style={[
+                            styles.reactionsContainer,
+                            isMyMessage ? styles.reactionsRight : styles.reactionsLeft
+                        ]}>
+                            {Object.entries(reactions).map(([emoji, users]) => (
+                                <TouchableOpacity
+                                    key={emoji}
+                                    style={[
+                                        styles.reactionBubble,
+                                        users.includes(currentUser.uid) && styles.reactionBubbleActive
+                                    ]}
+                                    onPress={() => handleReaction(item, emoji)}
+                                >
+                                    <Text style={styles.reactionEmoji}>{emoji}</Text>
+                                    <Text style={styles.reactionCount}>{users.length}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    )}
                 </View>
-            </View>
+            </TouchableOpacity>
         );
     };
 
@@ -399,14 +578,41 @@ export default function ChatRoomScreen({ route, navigation }) {
                 </View>
             )}
 
+            {/* Editing/Replying Banner */}
+            {(editingMessage || replyingTo) && (
+                <View style={styles.actionBanner}>
+                    <View style={styles.actionBannerContent}>
+                        <Icon
+                            name={editingMessage ? "pencil" : "return-down-forward"}
+                            size={16}
+                            color="#6C5CE7"
+                        />
+                        <View style={styles.actionBannerText}>
+                            <Text style={styles.actionBannerTitle}>
+                                {editingMessage ? 'Editing message' : 'Replying to'}
+                            </Text>
+                            <Text style={styles.actionBannerMessage} numberOfLines={1}>
+                                {editingMessage ? editingMessage.message : replyingTo?.message}
+                            </Text>
+                        </View>
+                    </View>
+                    <TouchableOpacity
+                        onPress={editingMessage ? cancelEdit : cancelReply}
+                        style={styles.actionBannerClose}
+                    >
+                        <Icon name="close" size={20} color="#888" />
+                    </TouchableOpacity>
+                </View>
+            )}
+
             {/* Input Bar */}
             <View style={styles.inputContainer}>
                 <TouchableOpacity
                     style={styles.attachButton}
                     onPress={handleMediaOptions}
-                    disabled={sending}
+                    disabled={sending || editingMessage}
                 >
-                    <Icon name="add-circle" size={28} color={sending ? "#444" : "#6C5CE7"} />
+                    <Icon name="add-circle" size={28} color={(sending || editingMessage) ? "#444" : "#6C5CE7"} />
                 </TouchableOpacity>
 
                 <TextInput
@@ -427,6 +633,8 @@ export default function ChatRoomScreen({ route, navigation }) {
                 >
                     {sending ? (
                         <Icon name="hourglass-outline" size={24} color="#fff" />
+                    ) : editingMessage ? (
+                        <Icon name="checkmark" size={24} color="#fff" />
                     ) : (
                         <Icon name="send" size={24} color="#fff" />
                     )}
@@ -653,5 +861,108 @@ const styles = StyleSheet.create({
         marginLeft: 8,
         color: '#888',
         fontSize: 12,
+    },
+    deletedMessageBubble: {
+        backgroundColor: '#2A2A2A',
+        opacity: 0.6,
+    },
+    deletedMessageText: {
+        color: '#888',
+        fontSize: 14,
+        fontStyle: 'italic',
+    },
+    replyPreview: {
+        flexDirection: 'row',
+        marginBottom: 8,
+        paddingBottom: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.1)',
+    },
+    replyLine: {
+        width: 3,
+        backgroundColor: '#6C5CE7',
+        borderRadius: 2,
+        marginRight: 8,
+    },
+    replyContent: {
+        flex: 1,
+    },
+    replyName: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#6C5CE7',
+        marginBottom: 2,
+    },
+    replyText: {
+        fontSize: 13,
+        color: '#bbb',
+    },
+    reactionsContainer: {
+        flexDirection: 'row',
+        marginTop: 4,
+        flexWrap: 'wrap',
+    },
+    reactionsRight: {
+        justifyContent: 'flex-end',
+    },
+    reactionsLeft: {
+        justifyContent: 'flex-start',
+    },
+    reactionBubble: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#2A2A2A',
+        borderRadius: 12,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        marginRight: 4,
+        marginTop: 2,
+        borderWidth: 1,
+        borderColor: '#333',
+    },
+    reactionBubbleActive: {
+        backgroundColor: '#6C5CE7',
+        borderColor: '#6C5CE7',
+    },
+    reactionEmoji: {
+        fontSize: 14,
+        marginRight: 4,
+    },
+    reactionCount: {
+        fontSize: 11,
+        color: '#fff',
+        fontWeight: '600',
+    },
+    actionBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 15,
+        paddingVertical: 10,
+        backgroundColor: '#2A2A2A',
+        borderTopWidth: 1,
+        borderTopColor: '#333',
+    },
+    actionBannerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    actionBannerText: {
+        marginLeft: 10,
+        flex: 1,
+    },
+    actionBannerTitle: {
+        fontSize: 12,
+        color: '#6C5CE7',
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    actionBannerMessage: {
+        fontSize: 13,
+        color: '#888',
+    },
+    actionBannerClose: {
+        padding: 5,
     },
 });
