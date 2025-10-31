@@ -1,6 +1,7 @@
 import { formatDistanceToNow } from 'date-fns';
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   StyleSheet,
@@ -17,6 +18,7 @@ export default function ChatListScreen({ navigation }) {
   const [chats, setChats] = useState([]);
   const [filteredChats, setFilteredChats] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
   const currentUser = authService.getCurrentUser();
 
   useEffect(() => {
@@ -24,6 +26,7 @@ export default function ChatListScreen({ navigation }) {
     const unsubscribe = chatService.listenToChatList(currentUser.uid, (chatList) => {
       setChats(chatList);
       setFilteredChats(chatList);
+      setLoading(false);
     });
 
     return () => unsubscribe();
@@ -67,17 +70,24 @@ export default function ChatListScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={styles.chatItem}
-        onPress={() =>
-          navigation.navigate('ChatRoom', {
-            chatId: item.chatId,
-            otherUser: item.otherUser,
-            isGroup: isGroup,
-            groupName: item.groupName,
-            groupPhoto: item.groupPhoto,
-            participants: item.participants,
-            admin: item.admin
-          })
-        }
+        onPress={() => {
+          if (isGroup) {
+            navigation.navigate('ChatRoom', {
+              chatId: item.chatId,
+              otherUser: { displayName: item.groupName, photoURL: item.groupPhoto },
+              isGroup: true,
+              groupName: item.groupName,
+              groupPhoto: item.groupPhoto,
+              participants: item.participants,
+              admin: item.admin
+            });
+          } else {
+            navigation.navigate('ChatRoom', {
+              chatId: item.chatId,
+              otherUser: item.otherUser
+            });
+          }
+        }}
       >
         <View style={styles.avatarContainer}>
           {displayPhoto ? (
@@ -156,7 +166,12 @@ export default function ChatListScreen({ navigation }) {
         />
       </View>
 
-      {filteredChats.length === 0 ? (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6C5CE7" />
+          <Text style={styles.loadingText}>Loading chats...</Text>
+        </View>
+      ) : filteredChats.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Icon name="chatbubbles-outline" size={80} color="#444" />
           <Text style={styles.emptyText}>No chats yet</Text>
@@ -325,6 +340,16 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#888',
+    fontSize: 14,
+    marginTop: 15,
   },
   emptyContainer: {
     flex: 1,

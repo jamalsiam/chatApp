@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   StyleSheet,
@@ -17,6 +18,9 @@ export default function SearchUsersScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [users, setUsers] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const searchTimeoutRef = useRef(null);
   const currentUser = authService.getCurrentUser();
 
   useEffect(() => {
@@ -24,24 +28,56 @@ export default function SearchUsersScreen({ navigation }) {
   }, []);
 
   const loadAllUsers = async () => {
-    const fetchedUsers = await userService.getAllUsers();
-    // Filter out current user
-    const filtered = fetchedUsers.filter(u => u.id !== currentUser.uid);
-    setAllUsers(filtered);
-    setUsers(filtered);
+    try {
+      const fetchedUsers = await userService.getAllUsers();
+      // Filter out current user
+      const filtered = fetchedUsers.filter(u => u.id !== currentUser.uid);
+      setAllUsers(filtered);
+      setUsers(filtered);
+    } catch (error) {
+      // Handle error silently
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const performSearch = (query) => {
+    if (query.trim() === '') {
+      setUsers(allUsers);
+      setSearching(false);
+    } else {
+      const filtered = allUsers.filter((user) =>
+        user.displayName?.toLowerCase().includes(query.toLowerCase()) ||
+        user.email?.toLowerCase().includes(query.toLowerCase())
+      );
+      setUsers(filtered);
+      setSearching(false);
+    }
   };
 
   const handleSearch = (query) => {
     setSearchQuery(query);
-    if (query.trim() === '') {
-      setUsers(allUsers);
-    } else {
-      const filtered = allUsers.filter((user) =>
-        user.displayName?.toLowerCase().includes(query.toLowerCase())
-      );
-      setUsers(filtered);
+    setSearching(true);
+
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
+
+    // Debounce search by 300ms
+    searchTimeoutRef.current = setTimeout(() => {
+      performSearch(query);
+    }, 300);
   };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleSelectUser = async (user) => {
     try {
@@ -103,23 +139,32 @@ export default function SearchUsersScreen({ navigation }) {
         <Icon name="search" size={20} color="#888" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search users..."
+          placeholder="Search users by name or email..."
           placeholderTextColor="#888"
           value={searchQuery}
           onChangeText={handleSearch}
           autoFocus
         />
-        {searchQuery.length > 0 && (
+        {searching ? (
+          <ActivityIndicator size="small" color="#6C5CE7" />
+        ) : searchQuery.length > 0 ? (
           <TouchableOpacity onPress={() => handleSearch('')}>
             <Icon name="close-circle" size={20} color="#888" />
           </TouchableOpacity>
-        )}
+        ) : null}
       </View>
 
-      {users.length === 0 ? (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6C5CE7" />
+          <Text style={styles.loadingText}>Loading users...</Text>
+        </View>
+      ) : users.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Icon name="people-outline" size={80} color="#444" />
-          <Text style={styles.emptyText}>No users found</Text>
+          <Text style={styles.emptyText}>
+            {searchQuery ? 'No users found' : 'No users available'}
+          </Text>
         </View>
       ) : (
         <FlatList
@@ -218,6 +263,16 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     backgroundColor: '#00D856',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#888',
+    fontSize: 14,
+    marginTop: 15,
   },
   emptyContainer: {
     flex: 1,
