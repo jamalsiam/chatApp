@@ -1,4 +1,4 @@
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
@@ -69,6 +69,18 @@ export default function ChatRoomScreen({ route, navigation }) {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
             setUserBalance(userDoc.data().balanceCoins || 0);
+        }
+    };
+
+    const formatMessageTime = (date) => {
+        if (!date) return '';
+
+        if (isToday(date)) {
+            return format(date, 'HH:mm');
+        } else if (isYesterday(date)) {
+            return `Yesterday ${format(date, 'HH:mm')}`;
+        } else {
+            return `${format(date, 'dd/MM/yyyy')} ${format(date, 'HH:mm')}`;
         }
     };
 
@@ -505,7 +517,7 @@ export default function ChatRoomScreen({ route, navigation }) {
                                 styles.messageTime,
                                 isMyMessage ? styles.myMessageTime : styles.theirMessageTime
                             ]}>
-                                {messageTime ? format(messageTime, 'HH:mm') : ''}
+                                {messageTime ? formatMessageTime(messageTime) : ''}
                                 {item.edited && ' (edited)'}
                             </Text>
                             {isMyMessage && (

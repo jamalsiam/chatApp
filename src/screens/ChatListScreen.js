@@ -1,4 +1,4 @@
-import { formatDistanceToNow } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -57,6 +57,18 @@ export default function ChatListScreen({ navigation }) {
       .substring(0, 2);
   };
 
+  const formatTimestamp = (date) => {
+    if (!date) return '';
+
+    if (isToday(date)) {
+      return format(date, 'HH:mm');
+    } else if (isYesterday(date)) {
+      return 'Yesterday';
+    } else {
+      return format(date, 'dd/MM/yyyy');
+    }
+  };
+
   const renderChatItem = ({ item }) => {
     const unreadCount = item.unreadCount?.[currentUser?.uid] || 0;
     const lastMessageTime = item.lastMessageTime?.toDate?.();
@@ -112,19 +124,25 @@ export default function ChatListScreen({ navigation }) {
         <View style={styles.chatInfo}>
           <View style={styles.chatHeader}>
             <View style={styles.chatNameContainer}>
-              <Text style={styles.chatName}>{displayName}</Text>
+              <Text style={[
+                styles.chatName,
+                unreadCount > 0 && styles.unreadChatName
+              ]}>{displayName}</Text>
               {isGroup && (
                 <Text style={styles.memberCount}>({memberCount})</Text>
               )}
             </View>
             {lastMessageTime && (
               <Text style={styles.timestamp}>
-                {formatDistanceToNow(lastMessageTime, { addSuffix: true })}
+                {formatTimestamp(lastMessageTime)}
               </Text>
             )}
           </View>
           <View style={styles.chatFooter}>
-            <Text style={styles.lastMessage} numberOfLines={1}>
+            <Text style={[
+              styles.lastMessage,
+              unreadCount > 0 && styles.unreadMessage
+            ]} numberOfLines={1}>
               {item.lastMessage || 'No messages yet'}
             </Text>
             {unreadCount > 0 && (
@@ -305,6 +323,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
+  unreadChatName: {
+    fontWeight: 'bold',
+  },
   memberCount: {
     fontSize: 13,
     color: '#888',
@@ -326,6 +347,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#888',
+  },
+  unreadMessage: {
+    fontWeight: 'bold',
+    color: '#fff',
   },
   unreadBadge: {
     backgroundColor: '#6C5CE7',
