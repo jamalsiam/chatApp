@@ -52,19 +52,24 @@ const galleryStorage = multer.diskStorage({
 const fileFilter = function (req, file, cb) {
   const filename = file.originalname.toLowerCase();
   const mimetype = file.mimetype.toLowerCase();
-  
+
   const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
   const videoExtensions = ['.mp4', '.mov', '.avi', '.webm', '.m4v', '.3gp'];
-  
+  const documentExtensions = ['.pdf', '.doc', '.docx', '.txt', '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.rar'];
+
   const hasImageExt = imageExtensions.some(ext => filename.endsWith(ext));
   const hasVideoExt = videoExtensions.some(ext => filename.endsWith(ext));
+  const hasDocExt = documentExtensions.some(ext => filename.endsWith(ext));
   const hasImageMime = mimetype.startsWith('image/');
   const hasVideoMime = mimetype.startsWith('video/');
-  
-  if (hasImageExt || hasVideoExt || hasImageMime || hasVideoMime) {
+  const hasDocMime = mimetype.includes('pdf') || mimetype.includes('document') ||
+                     mimetype.includes('text') || mimetype.includes('zip') ||
+                     mimetype.includes('spreadsheet') || mimetype.includes('presentation');
+
+  if (hasImageExt || hasVideoExt || hasDocExt || hasImageMime || hasVideoMime || hasDocMime) {
     return cb(null, true);
   } else {
-    cb(new Error('Only images and videos allowed!'));
+    cb(new Error('Only images, videos, and documents allowed!'));
   }
 };
 

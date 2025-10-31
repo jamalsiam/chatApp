@@ -418,6 +418,105 @@ class UserService {
       return [];
     }
   }
+
+  // Block user
+  async blockUser(currentUserId, targetUserId) {
+    try {
+      const currentUserRef = doc(db, 'users', currentUserId);
+      await updateDoc(currentUserRef, {
+        blockedUsers: arrayUnion(targetUserId)
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error blocking user:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Unblock user
+  async unblockUser(currentUserId, targetUserId) {
+    try {
+      const currentUserRef = doc(db, 'users', currentUserId);
+      await updateDoc(currentUserRef, {
+        blockedUsers: arrayRemove(targetUserId)
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error unblocking user:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Mute user
+  async muteUser(currentUserId, targetUserId) {
+    try {
+      const currentUserRef = doc(db, 'users', currentUserId);
+      await updateDoc(currentUserRef, {
+        mutedUsers: arrayUnion(targetUserId)
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error muting user:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Unmute user
+  async unmuteUser(currentUserId, targetUserId) {
+    try {
+      const currentUserRef = doc(db, 'users', currentUserId);
+      await updateDoc(currentUserRef, {
+        mutedUsers: arrayRemove(targetUserId)
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error unmuting user:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Report user
+  async reportUser(reporterId, reportedUserId, reason) {
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reporterId,
+        reportedUserId,
+        reason,
+        timestamp: serverTimestamp(),
+        status: 'pending'
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error reporting user:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Check if user is blocked
+  async isUserBlocked(currentUserId, targetUserId) {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUserId));
+      const userData = userDoc.data();
+      const blockedUsers = userData.blockedUsers || [];
+      return blockedUsers.includes(targetUserId);
+    } catch (error) {
+      console.error('Error checking if user is blocked:', error);
+      return false;
+    }
+  }
+
+  // Check if user is muted
+  async isUserMuted(currentUserId, targetUserId) {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUserId));
+      const userData = userDoc.data();
+      const mutedUsers = userData.mutedUsers || [];
+      return mutedUsers.includes(targetUserId);
+    } catch (error) {
+      console.error('Error checking if user is muted:', error);
+      return false;
+    }
+  }
 }
 
 export default new UserService();

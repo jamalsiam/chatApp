@@ -227,17 +227,21 @@ class ChatService {
         receiverId,
         message: '',
         mediaUrl,
-        mediaType, // 'image' or 'video'
+        mediaType, // 'image', 'video', or 'document'
         timestamp: serverTimestamp(),
         read: false
       };
- 
+
 
       await addDoc(collection(db, 'messages'), messageData);
 
       // Update chat with last message
+      let lastMsgText = '📷 Photo';
+      if (mediaType === 'video') lastMsgText = '🎥 Video';
+      if (mediaType === 'document') lastMsgText = '📄 Document';
+
       await updateDoc(doc(db, 'chats', chatId), {
-        lastMessage: mediaType === 'image' ? '📷 Photo' : '🎥 Video',
+        lastMessage: lastMsgText,
         lastMessageTime: serverTimestamp(),
         [`unreadCount.${receiverId}`]: increment(1)
       });
@@ -614,8 +618,12 @@ class ChatService {
         }
       });
 
+      let lastMsgText = '📷 Photo';
+      if (mediaType === 'video') lastMsgText = '🎥 Video';
+      if (mediaType === 'document') lastMsgText = '📄 Document';
+
       await updateDoc(doc(db, 'chats', chatId), {
-        lastMessage: mediaType === 'image' ? '📷 Photo' : '🎥 Video',
+        lastMessage: lastMsgText,
         lastMessageTime: serverTimestamp(),
         ...unreadUpdates
       });
