@@ -29,28 +29,34 @@ export default function FeedScreen({ navigation }) {
     const currentUser = authService.getCurrentUser();
     const flatListRef = useRef(null);
 
-    // Pan responder for swipe gestures
-    const panResponder = useRef(
-        PanResponder.create({
+    // Create pan responder for each item
+    const createPanResponder = (item) => {
+        return PanResponder.create({
+            onStartShouldSetPanResponder: (evt, gestureState) => false,
             onMoveShouldSetPanResponder: (evt, gestureState) => {
-                // Activate when horizontal movement is greater than vertical
-                return Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 30;
+                // Only activate for significant horizontal movement
+                const isHorizontal = Math.abs(gestureState.dx) > Math.abs(gestureState.dy);
+                const isSignificant = Math.abs(gestureState.dx) > 20;
+                return isHorizontal && isSignificant;
+            },
+            onPanResponderGrant: (evt, gestureState) => {
+                // Visual feedback can be added here
             },
             onPanResponderRelease: (evt, gestureState) => {
-                const currentPost = posts[currentIndex];
-                if (!currentPost) return;
-
                 // Swipe right - go to user profile
-                if (gestureState.dx > 50) {
-                    navigation.navigate('Profile', { userId: currentPost.userId });
+                if (gestureState.dx > 100) {
+                    navigation.navigate('Profile', { userId: item.userId });
                 }
                 // Swipe left - go to chat list
-                else if (gestureState.dx < -50) {
+                else if (gestureState.dx < -100) {
                     navigation.navigate('Chats');
                 }
             },
-        })
-    ).current;
+            onPanResponderTerminate: (evt, gestureState) => {
+                // Handle gesture termination
+            },
+        });
+    };
 
     useEffect(() => {
         loadPosts();
@@ -134,9 +140,10 @@ export default function FeedScreen({ navigation }) {
 
     const renderPost = ({ item, index }) => {
         const isVisible = index === currentIndex;
+        const itemPanResponder = createPanResponder(item);
 
         return (
-            <View style={styles.reelContainer}>
+            <View style={styles.reelContainer} {...itemPanResponder.panHandlers}>
                 {item.mediaType === 'image' ? (
                     <Image
                         source={{ uri: item.mediaUrl }}
@@ -233,7 +240,7 @@ export default function FeedScreen({ navigation }) {
     }
 
     return (
-        <View style={styles.container} {...panResponder.panHandlers}>
+        <View style={styles.container}>
             <FlatList
                 ref={flatListRef}
                 data={posts}
