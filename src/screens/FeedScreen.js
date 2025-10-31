@@ -43,13 +43,13 @@ export default function FeedScreen({ navigation }) {
                 // Visual feedback can be added here
             },
             onPanResponderRelease: (evt, gestureState) => {
-                // Swipe right - go to user profile
+                // Swipe right - go to chat list
                 if (gestureState.dx > 100) {
-                    navigation.navigate('Profile', { userId: item.userId });
-                }
-                // Swipe left - go to chat list
-                else if (gestureState.dx < -100) {
                     navigation.navigate('Chats');
+                }
+                // Swipe left - go to user profile
+                else if (gestureState.dx < -100) {
+                    navigation.navigate('Profile', { userId: item.userId });
                 }
             },
             onPanResponderTerminate: (evt, gestureState) => {
@@ -170,6 +170,12 @@ export default function FeedScreen({ navigation }) {
                     {/* Top Bar */}
                     <View style={styles.topBar}>
                         <Text style={styles.feedTitle}>Feed</Text>
+                        <TouchableOpacity
+                            style={styles.closeButton}
+                            onPress={() => navigation.navigate('Chats')}
+                        >
+                            <Icon name="close" size={28} color="#fff" />
+                        </TouchableOpacity>
                     </View>
 
                     {/* Bottom Content */}
@@ -327,6 +333,9 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
     },
     topBar: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         paddingTop: 50,
         paddingHorizontal: 20,
         paddingBottom: 10,
@@ -338,6 +347,14 @@ const styles = StyleSheet.create({
         textShadowColor: 'rgba(0, 0, 0, 0.75)',
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 3,
+    },
+    closeButton: {
+        width: 40,
+        height: 40,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        borderRadius: 20,
     },
     bottomContent: {
         paddingHorizontal: 20,
