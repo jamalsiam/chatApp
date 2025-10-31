@@ -176,6 +176,19 @@ export default function ChatRoomScreen({ route, navigation }) {
         const messageText = retryMessage || newMessage.trim();
         if (!messageText) return;
 
+        // Check if blocked
+        if (isBlocked) {
+            Alert.alert('Cannot Send', 'You have blocked this user. Unblock them to send messages.');
+            return;
+        }
+
+        // Check if we are blocked by the other user
+        const isBlockedByOther = await userService.isUserBlocked(otherUser.id, currentUser.uid);
+        if (isBlockedByOther) {
+            Alert.alert('Cannot Send', 'You cannot send messages to this user.');
+            return;
+        }
+
         // Clear typing status
         chatService.setTypingStatus(chatId, currentUser.uid, false);
         if (typingTimeoutRef.current) {
@@ -327,6 +340,18 @@ export default function ChatRoomScreen({ route, navigation }) {
     };
 
     const sendVoiceMessage = async (uri) => {
+        // Check if blocked
+        if (isBlocked) {
+            Alert.alert('Cannot Send', 'You have blocked this user. Unblock them to send messages.');
+            return;
+        }
+
+        const isBlockedByOther = await userService.isUserBlocked(otherUser.id, currentUser.uid);
+        if (isBlockedByOther) {
+            Alert.alert('Cannot Send', 'You cannot send messages to this user.');
+            return;
+        }
+
         if (userBalance < 1) {
             Alert.alert('Insufficient Coins', 'You need at least 1 coin to send a voice message');
             return;
@@ -571,6 +596,18 @@ export default function ChatRoomScreen({ route, navigation }) {
     };
 
     const sendImage = async (imageUri) => {
+        // Check if blocked
+        if (isBlocked) {
+            Alert.alert('Cannot Send', 'You have blocked this user. Unblock them to send messages.');
+            return;
+        }
+
+        const isBlockedByOther = await userService.isUserBlocked(otherUser.id, currentUser.uid);
+        if (isBlockedByOther) {
+            Alert.alert('Cannot Send', 'You cannot send messages to this user.');
+            return;
+        }
+
         if (userBalance < 1) {
             Alert.alert('Insufficient Coins', 'You need at least 1 coin to send media');
             return;
@@ -706,6 +743,18 @@ export default function ChatRoomScreen({ route, navigation }) {
     };
 
     const sendGIF = async (gifUrl) => {
+        // Check if blocked
+        if (isBlocked) {
+            Alert.alert('Cannot Send', 'You have blocked this user. Unblock them to send messages.');
+            return;
+        }
+
+        const isBlockedByOther = await userService.isUserBlocked(otherUser.id, currentUser.uid);
+        if (isBlockedByOther) {
+            Alert.alert('Cannot Send', 'You cannot send messages to this user.');
+            return;
+        }
+
         if (userBalance < 1) {
             Alert.alert('Insufficient Coins', 'You need at least 1 coin to send a GIF');
             return;

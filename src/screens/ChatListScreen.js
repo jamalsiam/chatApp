@@ -1,4 +1,5 @@
 import { format, isToday, isYesterday } from 'date-fns';
+import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,6 +12,7 @@ import {
   View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { db } from '../config/firebase';
 import authService from '../services/authService';
 import chatService from '../services/chatService';
 
@@ -19,6 +21,7 @@ export default function ChatListScreen({ navigation }) {
   const [filteredChats, setFilteredChats] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [mutedUsers, setMutedUsers] = useState([]);
   const currentUser = authService.getCurrentUser();
 
   useEffect(() => {
@@ -30,6 +33,22 @@ export default function ChatListScreen({ navigation }) {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    // Load muted users list
+    const loadMutedUsers = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          setMutedUsers(userDoc.data().mutedUsers || []);
+        }
+      } catch (error) {
+        console.error('Error loading muted users:', error);
+      }
+    };
+
+    loadMutedUsers();
   }, []);
 
   const handleSearch = (query) => {
@@ -91,6 +110,9 @@ export default function ChatListScreen({ navigation }) {
       isOtherUserTyping = diff < 3000; // Consider typing if within last 3 seconds
     }
 
+    // Check if this chat is muted
+    const isMuted = !isGroup && otherUserId && mutedUsers.includes(otherUserId);
+
     // For groups, prepare group info
     const displayName = isGroup ? item.groupName : item.otherUser?.displayName;
     const displayPhoto = isGroup ? item.groupPhoto : item.otherUser?.photoURL;
@@ -149,11 +171,16 @@ export default function ChatListScreen({ navigation }) {
                 <Text style={styles.memberCount}>({memberCount})</Text>
               )}
             </View>
-            {lastMessageTime && (
-              <Text style={styles.timestamp}>
-                {formatTimestamp(lastMessageTime)}
-              </Text>
-            )}
+            <View style={styles.timestampContainer}>
+              {isMuted && (
+                <Icon name="notifications-off" size={14} color="#888" style={styles.muteIcon} />
+              )}
+              {lastMessageTime && (
+                <Text style={styles.timestamp}>
+                  {formatTimestamp(lastMessageTime)}
+                </Text>
+              )}
+            </View>
           </View>
           <View style={styles.chatFooter}>
             <View style={styles.lastMessageContainer}>
@@ -361,6 +388,14 @@ const styles = StyleSheet.create({
   },
   groupAvatarPlaceholder: {
     backgroundColor: '#6C5CE7',
+  },
+  timestampContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  muteIcon: {
+    marginRight: 2,
   },
   timestamp: {
     fontSize: 12,

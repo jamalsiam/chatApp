@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     addDoc,
     collection,
@@ -18,14 +19,47 @@ import {
 import { Platform } from 'react-native';
 import { db } from '../config/firebase';
 
-// Configure notification behavior
+const NOTIFICATION_SETTINGS_KEY = '@notification_settings';
+
+// Configure notification behavior - will be updated dynamically
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async () => {
+    // Load settings to determine behavior
+    const settings = await loadNotificationSettings();
+
+    return {
+      shouldShowAlert: settings.enabled,
+      shouldPlaySound: settings.enabled && settings.sound,
+      shouldSetBadge: settings.enabled,
+    };
+  },
 });
+
+// Helper function to load notification settings
+async function loadNotificationSettings() {
+  try {
+    const savedSettings = await AsyncStorage.getItem(NOTIFICATION_SETTINGS_KEY);
+    if (savedSettings) {
+      return JSON.parse(savedSettings);
+    }
+  } catch (error) {
+    console.error('Error loading notification settings:', error);
+  }
+
+  // Default settings
+  return {
+    enabled: true,
+    sound: true,
+    vibration: true,
+    messageNotifications: true,
+    followNotifications: true,
+    likeNotifications: true,
+    commentNotifications: true,
+    showPreview: true,
+    muteFrom: null,
+    muteTo: null,
+  };
+}
 
 class NotificationService {
   constructor() {
@@ -330,11 +364,65 @@ class NotificationService {
         return;
       }
 
+      // Check if sender is muted by receiver
+      const mutedUsers = receiverData.mutedUsers || [];
+      if (mutedUsers.includes(senderId)) {
+        // User is muted, don't send notification
+        return;
+      }
+
+      // Check if sender is blocked by receiver
+      const blockedUsers = receiverData.blockedUsers || [];
+      if (blockedUsers.includes(senderId)) {
+        // User is blocked, don't send notification
+        return;
+      }
+
+      // Load notification settings
+      const settings = await loadNotificationSettings();
+
+      // Check if notifications are enabled
+      if (!settings.enabled || !settings.messageNotifications) {
+        return;
+      }
+
+      // Check quiet hours
+      if (settings.muteFrom && settings.muteTo) {
+        const now = new Date();
+        const currentHour = now.getHours();
+        const currentMinute = now.getMinutes();
+        const currentTime = currentHour * 60 + currentMinute;
+
+        const [muteFromHour, muteFromMin] = settings.muteFrom.split(':').map(Number);
+        const [muteToHour, muteToMin] = settings.muteTo.split(':').map(Number);
+        const muteFromTime = muteFromHour * 60 + muteFromMin;
+        const muteToTime = muteToHour * 60 + muteToMin;
+
+        // Handle overnight quiet hours (e.g., 23:00 to 07:00)
+        if (muteFromTime > muteToTime) {
+          if (currentTime >= muteFromTime || currentTime < muteToTime) {
+            return; // In quiet hours
+          }
+        } else {
+          if (currentTime >= muteFromTime && currentTime < muteToTime) {
+            return; // In quiet hours
+          }
+        }
+      }
+
       // Get sender info
       const senderDoc = await getDoc(doc(db, 'users', senderId));
       if (!senderDoc.exists()) return;
 
       const senderName = senderDoc.data().displayName || 'Someone';
+
+      // Determine message preview based on settings
+      const messageBody = settings.showPreview ? message : 'New message';
+
+      // Trigger vibration if enabled
+      if (settings.vibration && Platform.OS !== 'web') {
+        // Note: Vibration is handled by the notification system automatically
+      }
 
       // Send notification
       await this.sendNotificationToUser(
@@ -354,12 +442,20 @@ class NotificationService {
   // Send follow notification
   async sendFollowNotification(followerId, followedUserId) {
     try {
+      // Load notification settings
+      const settings = await loadNotificationSettings();
+
+      // Check if notifications are enabled
+      if (!settings.enabled || !settings.followNotifications) {
+        return;
+      }
+
       // Get follower info
       const followerDoc = await getDoc(doc(db, 'users', followerId));
       if (!followerDoc.exists()) return;
 
       const followerName = followerDoc.data().displayName || 'Someone';
-      
+
       // Send notification
       await this.sendNotificationToUser(
         followedUserId,
