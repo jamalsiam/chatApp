@@ -74,6 +74,10 @@ export default function ChatListScreen({ navigation }) {
     const lastMessageTime = item.lastMessageTime?.toDate?.();
     const isGroup = item.isGroup;
 
+    // Check if current user sent the last message
+    const isSentByMe = item.lastMessageSenderId === currentUser?.uid;
+    const isLastMessageRead = item.lastMessageRead || false;
+
     // For groups, prepare group info
     const displayName = isGroup ? item.groupName : item.otherUser?.displayName;
     const displayPhoto = isGroup ? item.groupPhoto : item.otherUser?.photoURL;
@@ -139,12 +143,22 @@ export default function ChatListScreen({ navigation }) {
             )}
           </View>
           <View style={styles.chatFooter}>
-            <Text style={[
-              styles.lastMessage,
-              unreadCount > 0 && styles.unreadMessage
-            ]} numberOfLines={1}>
-              {item.lastMessage || 'No messages yet'}
-            </Text>
+            <View style={styles.lastMessageContainer}>
+              {isSentByMe && (
+                <Icon
+                  name={isLastMessageRead ? "checkmark-done" : "checkmark"}
+                  size={16}
+                  color={isLastMessageRead ? "#4A9EFF" : "#888"}
+                  style={styles.readIcon}
+                />
+              )}
+              <Text style={[
+                styles.lastMessage,
+                unreadCount > 0 && styles.unreadMessage
+              ]} numberOfLines={1}>
+                {item.lastMessage || 'No messages yet'}
+              </Text>
+            </View>
             {unreadCount > 0 && (
               <View style={styles.unreadBadge}>
                 <Text style={styles.unreadText}>{unreadCount}</Text>
@@ -342,6 +356,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  lastMessageContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  readIcon: {
+    marginRight: 4,
   },
   lastMessage: {
     flex: 1,

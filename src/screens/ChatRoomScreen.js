@@ -26,6 +26,7 @@ export default function ChatRoomScreen({ route, navigation }) {
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
     const [sending, setSending] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [userBalance, setUserBalance] = useState(0);
     const [editingMessage, setEditingMessage] = useState(null);
     const [replyingTo, setReplyingTo] = useState(null);
@@ -37,6 +38,7 @@ export default function ChatRoomScreen({ route, navigation }) {
         // Listen to messages
         const unsubscribe = chatService.listenToMessages(chatId, (msgs) => {
             setMessages(msgs);
+            setLoading(false);
         });
 
         // Mark messages as read in chat list
@@ -597,7 +599,12 @@ export default function ChatRoomScreen({ route, navigation }) {
             </View>
 
             {/* Messages List */}
-            {messages.length === 0 ? (
+            {loading ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#6C5CE7" />
+                    <Text style={styles.loadingText}>Loading messages...</Text>
+                </View>
+            ) : messages.length === 0 ? (
                 <View style={styles.emptyContainer}>
                     <Icon name="chatbubbles-outline" size={60} color="#444" />
                     <Text style={styles.emptyText}>No messages yet</Text>
@@ -612,6 +619,10 @@ export default function ChatRoomScreen({ route, navigation }) {
                     renderItem={renderMessage}
                     inverted
                     contentContainerStyle={styles.messagesList}
+                    removeClippedSubviews={true}
+                    maxToRenderPerBatch={10}
+                    windowSize={10}
+                    initialNumToRender={15}
                 />
             )}
 
@@ -864,6 +875,16 @@ const styles = StyleSheet.create({
     },
     sendButtonDisabled: {
         backgroundColor: '#444',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        color: '#888',
+        fontSize: 14,
+        marginTop: 15,
     },
     emptyContainer: {
         flex: 1,

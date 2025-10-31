@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { Platform } from 'react-native';
 import { db } from '../config/firebase';
+import notificationService from './NotificationService';
 
 // Configuration for your local server
 // IMPORTANT: Replace YOUR_LOCAL_IP with your actual IP address!
@@ -93,8 +94,13 @@ class ChatService {
       await updateDoc(doc(db, 'chats', chatId), {
         lastMessage: message,
         lastMessageTime: serverTimestamp(),
+        lastMessageSenderId: senderId,
+        lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
       });
+
+      // Send push notification to receiver
+      await notificationService.sendMessageNotification(senderId, receiverId, message, chatId);
 
       return { success: true };
     } catch (error) {
@@ -242,9 +248,14 @@ class ChatService {
       await updateDoc(doc(db, 'chats', chatId), {
         lastMessage: lastMsgText,
         lastMessageTime: serverTimestamp(),
+        lastMessageSenderId: senderId,
+        lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
       });
- 
+
+      // Send push notification to receiver
+      await notificationService.sendMessageNotification(senderId, receiverId, lastMsgText, chatId);
+
       return { success: true };
     } catch (error) {
       
@@ -291,6 +302,7 @@ class ChatService {
 
       const snapshot = await getDocs(q);
       const updatePromises = [];
+      let markedAny = false;
 
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
@@ -304,10 +316,20 @@ class ChatService {
               seenBy: data.seenBy ? [...data.seenBy, userId] : [userId]
             })
           );
+          markedAny = true;
         }
       });
 
       await Promise.all(updatePromises);
+
+      // Update chat's lastMessageRead if any messages were marked as read
+      if (markedAny) {
+        const chatRef = doc(db, 'chats', chatId);
+        await updateDoc(chatRef, {
+          lastMessageRead: true
+        });
+      }
+
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -468,8 +490,13 @@ class ChatService {
       await updateDoc(doc(db, 'chats', chatId), {
         lastMessage: message,
         lastMessageTime: serverTimestamp(),
+        lastMessageSenderId: senderId,
+        lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
       });
+
+      // Send push notification to receiver
+      await notificationService.sendMessageNotification(senderId, receiverId, message, chatId);
 
       return { success: true };
     } catch (error) {
