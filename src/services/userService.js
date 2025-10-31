@@ -108,7 +108,10 @@ class UserService {
   // Upload gallery post to LOCAL SERVER
   async uploadGalleryPost(userId, mediaUri, mediaType) {
     try {
-
+      console.log('📤 Upload: Starting gallery upload...');
+      console.log(`   User: ${userId}`);
+      console.log(`   Type: ${mediaType}`);
+      console.log(`   URI: ${mediaUri.substring(0, 50)}...`);
 
       // Create form data
       const formData = new FormData();
@@ -124,6 +127,7 @@ class UserService {
       }
 
       const fileName = `${Date.now()}.${fileType}`;
+      console.log(`   File: ${fileName}, MIME: ${mimeType}`);
 
       formData.append('file', {
         uri: mediaUri,
@@ -134,7 +138,7 @@ class UserService {
       formData.append('userId', userId);
       formData.append('timestamp', Date.now().toString());
 
-
+      console.log(`   Uploading to: ${LOCAL_SERVER_CONFIG.uploadUrl}`);
 
       const response = await fetch(LOCAL_SERVER_CONFIG.uploadUrl, {
         method: 'POST',
@@ -146,13 +150,15 @@ class UserService {
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('❌ Upload: Server error:', response.status, errorText);
         throw new Error(`Upload failed: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
       const mediaUrl = result.url;
 
-
+      console.log('✅ Upload: Media uploaded to server');
+      console.log(`   URL: ${mediaUrl}`);
 
       // Save post reference in Firestore
       const postData = {
@@ -162,7 +168,11 @@ class UserService {
         createdAt: serverTimestamp()
       };
 
+      console.log('💾 Upload: Saving to Firestore collection: gallery_posts');
+
       const postRef = await addDoc(collection(db, 'gallery_posts'), postData);
+
+      console.log(`✅ Upload: Post saved to Firestore with ID: ${postRef.id}`);
 
       return {
         success: true,
@@ -170,7 +180,7 @@ class UserService {
         mediaUrl: mediaUrl
       };
     } catch (error) {
-      console.error('❌ Error uploading gallery post:', error);
+      console.error('❌ Upload: Error uploading gallery post:', error);
       throw error;
     }
   }
@@ -178,6 +188,8 @@ class UserService {
   // Get user's gallery posts
   async getUserGalleryPosts(userId) {
     try {
+      console.log(`📥 Fetch: Getting gallery posts for user: ${userId}`);
+
       const postsRef = collection(db, 'gallery_posts');
       const q = query(
         postsRef,
@@ -187,8 +199,11 @@ class UserService {
       const snapshot = await getDocs(q);
       const posts = [];
 
+      console.log(`   Found ${snapshot.size} posts in Firestore`);
+
       snapshot.forEach((doc) => {
         const data = doc.data();
+        console.log(`   Post ${doc.id}: ${data.mediaType}, URL: ${data.mediaUrl?.substring(0, 50)}...`);
         posts.push({
           id: doc.id,
           ...data,
@@ -204,9 +219,10 @@ class UserService {
         return timeB - timeA; // Newest first
       });
 
+      console.log(`✅ Fetch: Returning ${posts.length} posts`);
       return posts;
     } catch (error) {
-      console.error('Error getting gallery posts:', error);
+      console.error('❌ Fetch: Error getting gallery posts:', error);
       return [];
     }
   }
