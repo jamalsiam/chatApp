@@ -90,14 +90,30 @@ class ChatService {
 
       await addDoc(collection(db, 'messages'), messageData);
 
-      // Update chat with last message
-      await updateDoc(doc(db, 'chats', chatId), {
+      // Check if receiver had deleted this chat - if so, restore it
+      const chatRef = doc(db, 'chats', chatId);
+      const chatDoc = await getDoc(chatRef);
+      const chatData = chatDoc.data();
+      const deletedBy = chatData.deletedBy || [];
+      const deletedForUsers = chatData.deletedForUsers || {};
+
+      const updates = {
         lastMessage: message,
         lastMessageTime: serverTimestamp(),
         lastMessageSenderId: senderId,
         lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
-      });
+      };
+
+      // If receiver had deleted the chat, restore it for them (but they'll only see new messages)
+      if (deletedBy.includes(receiverId)) {
+        // Remove receiver from deletedBy so chat reappears
+        updates.deletedBy = deletedBy.filter(id => id !== receiverId);
+        // Keep deletedForUsers timestamp so old messages stay hidden
+      }
+
+      // Update chat with last message
+      await updateDoc(chatRef, updates);
 
       // Send push notification to receiver
       await notificationService.sendMessageNotification(senderId, receiverId, message, chatId);
@@ -201,21 +217,21 @@ class ChatService {
   // Send Media Message
   async sendMediaMessage(chatId, senderId, receiverId, mediaUri, mediaType) {
     try {
-     
+
       // Check if sender has enough coins
       const senderDoc = await getDoc(doc(db, 'users', senderId));
       const senderData = senderDoc.data();
 
       if (senderData.balanceCoins < 1) {
-     
+
         return { success: false, error: 'Insufficient coins' };
       }
 
-      
+
 
       // Upload media to local server
       const mediaUrl = await this.uploadMedia(mediaUri, chatId);
-     
+
       // Deduct 1 coin from sender
       await updateDoc(doc(db, 'users', senderId), {
         balanceCoins: increment(-1)
@@ -225,7 +241,7 @@ class ChatService {
       await updateDoc(doc(db, 'users', receiverId), {
         balanceCoins: increment(1)
       });
- 
+
 
       // Add message with media
       const messageData = {
@@ -248,38 +264,91 @@ class ChatService {
       if (mediaType === 'audio') lastMsgText = '🎤 Voice message';
       if (mediaType === 'document') lastMsgText = '📄 Document';
 
-      await updateDoc(doc(db, 'chats', chatId), {
+      // Check if receiver had deleted this chat - if so, restore it
+      const chatRef = doc(db, 'chats', chatId);
+      const chatDoc = await getDoc(chatRef);
+      const chatData = chatDoc.data();
+      const deletedBy = chatData.deletedBy || [];
+
+      const updates = {
         lastMessage: lastMsgText,
         lastMessageTime: serverTimestamp(),
         lastMessageSenderId: senderId,
         lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
-      });
+      };
+
+      // If receiver had deleted the chat, restore it for them (but they'll only see new messages)
+      if (deletedBy.includes(receiverId)) {
+        // Remove receiver from deletedBy so chat reappears
+        updates.deletedBy = deletedBy.filter(id => id !== receiverId);
+        // Keep deletedForUsers timestamp so old messages stay hidden
+      }
+
+      await updateDoc(chatRef, updates);
 
       // Send push notification to receiver
       await notificationService.sendMessageNotification(senderId, receiverId, lastMsgText, chatId);
 
       return { success: true };
     } catch (error) {
-      
+
       return { success: false, error: error.message };
     }
   }
 
   // Listen to Messages
-  listenToMessages(chatId, callback) {
+  listenToMessages(chatId, callback, userId = null) {
     const q = query(
       collection(db, 'messages'),
       where('chatId', '==', chatId),
       orderBy('timestamp', 'desc')
     );
 
-    return onSnapshot(q, (snapshot) => {
+    // Also listen to chat document to get deletedForUsers info
+    const chatRef = doc(db, 'chats', chatId);
+
+    return onSnapshot(q, async (snapshot) => {
       const messages = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        messages.push({ id: doc.id, ...data });
+
+      // Get chat data to check if user deleted the chat
+      let deletionTimestamp = null;
+      if (userId) {
+        try {
+          const chatDoc = await getDoc(chatRef);
+          if (chatDoc.exists()) {
+            const chatData = chatDoc.data();
+            const deletedForUsers = chatData.deletedForUsers || {};
+            if (deletedForUsers[userId]) {
+              deletionTimestamp = deletedForUsers[userId];
+            }
+          }
+        } catch (error) {
+          // Silently handle error
+        }
+      }
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+
+        // If user deleted the chat, only show messages after deletion timestamp
+        if (deletionTimestamp && data.timestamp) {
+          // Convert both to comparable format
+          const msgTime = data.timestamp.toMillis ? data.timestamp.toMillis() :
+                         (data.timestamp.toDate ? data.timestamp.toDate().getTime() : 0);
+          const delTime = deletionTimestamp.toMillis ? deletionTimestamp.toMillis() :
+                         (deletionTimestamp.toDate ? deletionTimestamp.toDate().getTime() : 0);
+
+          // Only include messages sent AFTER deletion
+          if (msgTime > delTime) {
+            messages.push({ id: docSnap.id, ...data });
+          }
+        } else {
+          // No deletion timestamp or no timestamp on message, include it
+          messages.push({ id: docSnap.id, ...data });
+        }
       });
+
       callback(messages);
     });
   }
@@ -352,6 +421,13 @@ class ChatService {
 
       for (const docSnap of snapshot.docs) {
         const chatData = docSnap.data();
+
+        // Filter out chats deleted by this user
+        const deletedBy = chatData.deletedBy || [];
+        if (deletedBy.includes(userId)) {
+          continue; // Skip this chat
+        }
+
         const otherUserId = chatData.participants.find(id => id !== userId);
 
         const userDoc = await getDoc(doc(db, 'users', otherUserId));
@@ -489,14 +565,29 @@ class ChatService {
 
       await addDoc(collection(db, 'messages'), messageData);
 
-      // Update chat with last message
-      await updateDoc(doc(db, 'chats', chatId), {
+      // Check if receiver had deleted this chat - if so, restore it
+      const chatRef = doc(db, 'chats', chatId);
+      const chatDoc = await getDoc(chatRef);
+      const chatData = chatDoc.data();
+      const deletedBy = chatData.deletedBy || [];
+
+      const updates = {
         lastMessage: message,
         lastMessageTime: serverTimestamp(),
         lastMessageSenderId: senderId,
         lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
-      });
+      };
+
+      // If receiver had deleted the chat, restore it for them (but they'll only see new messages)
+      if (deletedBy.includes(receiverId)) {
+        // Remove receiver from deletedBy so chat reappears
+        updates.deletedBy = deletedBy.filter(id => id !== receiverId);
+        // Keep deletedForUsers timestamp so old messages stay hidden
+      }
+
+      // Update chat with last message
+      await updateDoc(chatRef, updates);
 
       // Send push notification to receiver
       await notificationService.sendMessageNotification(senderId, receiverId, message, chatId);
@@ -749,6 +840,54 @@ class ChatService {
         callback(typing);
       }
     });
+  }
+
+  // Delete Chat Room
+  async deleteChatRoom(chatId, userId) {
+    try {
+      const chatRef = doc(db, 'chats', chatId);
+      const chatDoc = await getDoc(chatRef);
+
+      if (!chatDoc.exists()) {
+        return { success: false, error: 'Chat not found' };
+      }
+
+      const chatData = chatDoc.data();
+
+      // Check if user is a participant
+      if (!chatData.participants.includes(userId)) {
+        return { success: false, error: 'Unauthorized' };
+      }
+
+      const deletedBy = chatData.deletedBy || [];
+      const deletedForUsers = chatData.deletedForUsers || {};
+
+      if (!deletedBy.includes(userId)) {
+        deletedBy.push(userId);
+      }
+
+      // Mark the timestamp when this user deleted the chat
+      // All messages before this timestamp will be hidden from this user
+      deletedForUsers[userId] = serverTimestamp();
+
+      // Update the chat with deletion info
+      await updateDoc(chatRef, {
+        deletedBy: deletedBy,
+        deletedForUsers: deletedForUsers
+      });
+
+      // If all participants have deleted the chat, mark it as fully deleted
+      if (deletedBy.length >= chatData.participants.length) {
+        await updateDoc(chatRef, {
+          deleted: true,
+          deletedAt: serverTimestamp()
+        });
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   }
 }
 

@@ -3,6 +3,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   StyleSheet,
@@ -90,6 +91,89 @@ export default function ChatListScreen({ navigation }) {
     }
   };
 
+  const handleDeleteChat = (chatId, displayName) => {
+    Alert.alert(
+      'Delete Chat',
+      `Are you sure you want to delete this conversation with ${displayName}?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await chatService.deleteChatRoom(chatId, currentUser.uid);
+            if (!result.success) {
+              Alert.alert('Error', result.error || 'Failed to delete chat');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleMuteChat = async (item) => {
+    const otherUserId = item.otherUser?.id;
+    if (!otherUserId || item.isGroup) return;
+
+    const isMuted = mutedUsers.includes(otherUserId);
+    const displayName = item.otherUser?.displayName;
+
+    if (isMuted) {
+      // Unmute
+      const result = await require('../services/userService').default.unmuteUser(currentUser.uid, otherUserId);
+      if (result.success) {
+        setMutedUsers(prev => prev.filter(id => id !== otherUserId));
+        Alert.alert('Unmuted', `${displayName} has been unmuted`);
+      }
+    } else {
+      // Mute
+      const result = await require('../services/userService').default.muteUser(currentUser.uid, otherUserId);
+      if (result.success) {
+        setMutedUsers(prev => [...prev, otherUserId]);
+        Alert.alert('Muted', `${displayName} has been muted`);
+      }
+    }
+  };
+
+  const handleLongPress = (item) => {
+    const displayName = item.isGroup ? item.groupName : item.otherUser?.displayName;
+    const isGroup = item.isGroup;
+    const otherUserId = item.otherUser?.id;
+    const isMuted = !isGroup && otherUserId && mutedUsers.includes(otherUserId);
+
+    const buttons = [];
+
+    // Mute/Unmute option (only for one-on-one chats)
+    if (!isGroup) {
+      buttons.push({
+        text: isMuted ? 'Unmute' : 'Mute',
+        onPress: () => handleMuteChat(item)
+      });
+    }
+
+    // Delete option
+    buttons.push({
+      text: 'Delete Chat',
+      style: 'destructive',
+      onPress: () => handleDeleteChat(item.chatId, displayName)
+    });
+
+    // Cancel option
+    buttons.push({
+      text: 'Cancel',
+      style: 'cancel'
+    });
+
+    Alert.alert(
+      displayName,
+      'Choose an action',
+      buttons
+    );
+  };
+
   const renderChatItem = ({ item }) => {
     const unreadCount = item.unreadCount?.[currentUser?.uid] || 0;
     const lastMessageTime = item.lastMessageTime?.toDate?.();
@@ -149,6 +233,7 @@ export default function ChatListScreen({ navigation }) {
             });
           }
         }}
+        onLongPress={() => handleLongPress(item)}
       >
         <View style={styles.avatarContainer}>
           {displayPhoto ? (

@@ -511,6 +511,34 @@ class UserService {
       return false;
     }
   }
+
+  // Delete Account
+  async deleteAccount(userId) {
+    try {
+      // Mark user as deleted in Firestore
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        deleted: true,
+        deletedAt: serverTimestamp(),
+        email: 'deleted_user@deleted.com',
+        displayName: 'Deleted User',
+        photoURL: '',
+        bio: '',
+        status: 'Account deleted'
+      });
+
+      // Note: In a real production app, you should also:
+      // 1. Delete user's messages
+      // 2. Delete user's gallery posts
+      // 3. Remove user from all chats
+      // 4. Delete Firebase Auth account
+      // 5. This would be better done via Cloud Functions
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 export default new UserService();

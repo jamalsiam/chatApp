@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Call</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        #video-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+        }
+
+        #remoteVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            background: #1a1a1a;
+        }
+
+        #localVideo {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 120px;
+            height: 160px;
+            border-radius: 12px;
+            object-fit: cover;
+            border: 2px solid #fff;
+            background: #2a2a2a;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        #status {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            background: rgba(0,0,0,0.6);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+        }
+
+        #status.connecting { color: #FFD700; }
+        #status.connected { color: #00D856; }
+        #status.error { color: #FF4757; }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="video-container">
+        <video id="remoteVideo" autoplay playsinline></video>
+        <video id="localVideo" autoplay playsinline muted></video>
+        <div id="status" class="connecting">Connecting...</div>
+    </div>
+
+    <script>
+        // WebRTC configuration
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ]
+        };
+
+        let peerConnection = null;
+        let localStream = null;
+        let remoteStream = null;
+        let callType = 'video'; // 'video' or 'audio'
+        let isInitiator = false;
+
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const statusDiv = document.getElementById('status');
+
+        // Communication with React Native
+        function sendMessageToRN(type, data) {
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type, data }));
+            }
+        }
+
+        function updateStatus(message, className = 'connecting') {
+            statusDiv.textContent = message;
+            statusDiv.className = className;
+        }
+
+        // Initialize call
+        async function initializeCall(options) {
+            try {
+                callType = options.callType || 'video';
+                isInitiator = options.isInitiator || false;
+
+                updateStatus('Getting media devices...', 'connecting');
+
+                // Get user media
+                const constraints = {
+                    audio: true,
+                    video: callType === 'video' ? {
+                        facingMode: 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } : false
+                };
+
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                localVideo.srcObject = localStream;
+
+                if (callType === 'audio') {
+                    localVideo.classList.add('hidden');
+                }
+
+                updateStatus('Creating peer connection...', 'connecting');
+
+                // Create peer connection
+                peerConnection = new RTCPeerConnection(configuration);
+
+                // Add local stream to peer connection
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+
+                // Handle remote stream
+                remoteStream = new MediaStream();
+                remoteVideo.srcObject = remoteStream;
+
+                peerConnection.ontrack = (event) => {
+                    event.streams[0].getTracks().forEach(track => {
+                        remoteStream.addTrack(track);
+                    });
+                    updateStatus('Connected', 'connected');
+                };
+
+                // Handle ICE candidates
+                peerConnection.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        sendMessageToRN('iceCandidate', event.candidate);
+                    }
+                };
+
+                // Handle connection state changes
+                peerConnection.onconnectionstatechange = () => {
+                    const state = peerConnection.connectionState;
+                    console.log('Connection state:', state);
+
+                    if (state === 'connected') {
+                        updateStatus('Connected', 'connected');
+                    } else if (state === 'failed' || state === 'disconnected') {
+                        updateStatus('Connection lost', 'error');
+                        sendMessageToRN('connectionError', { state });
+                    }
+                };
+
+                // If initiator, create offer
+                if (isInitiator) {
+                    updateStatus('Creating offer...', 'connecting');
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLocalDescription(offer);
+                    sendMessageToRN('offer', offer);
+                }
+
+                sendMessageToRN('initialized', { success: true });
+            } catch (error) {
+                console.error('Error initializing call:', error);
+                updateStatus('Failed to start call', 'error');
+                sendMessageToRN('error', { message: error.message });
+            }
+        }
+
+        // Handle offer from remote peer
+        async function handleOffer(offer) {
+            try {
+                updateStatus('Receiving call...', 'connecting');
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+
+                sendMessageToRN('answer', answer);
+            } catch (error) {
+                console.error('Error handling offer:', error);
+                sendMessageToRN('error', { message: error.message });
+            }
+        }
+
+        // Handle answer from remote peer
+        async function handleAnswer(answer) {
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+                updateStatus('Connecting...', 'connecting');
+            } catch (error) {
+                console.error('Error handling answer:', error);
+                sendMessageToRN('error', { message: error.message });
+            }
+        }
+
+        // Handle ICE candidate from remote peer
+        async function handleIceCandidate(candidate) {
+            try {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (error) {
+                console.error('Error adding ICE candidate:', error);
+            }
+        }
+
+        // Toggle camera
+        function toggleCamera() {
+            if (localStream) {
+                const videoTrack = localStream.getVideoTracks()[0];
+                if (videoTrack) {
+                    videoTrack.enabled = !videoTrack.enabled;
+                    sendMessageToRN('cameraToggled', { enabled: videoTrack.enabled });
+                    return videoTrack.enabled;
+                }
+            }
+            return false;
+        }
+
+        // Toggle microphone
+        function toggleMicrophone() {
+            if (localStream) {
+                const audioTrack = localStream.getAudioTracks()[0];
+                if (audioTrack) {
+                    audioTrack.enabled = !audioTrack.enabled;
+                    sendMessageToRN('microphoneToggled', { enabled: audioTrack.enabled });
+                    return audioTrack.enabled;
+                }
+            }
+            return false;
+        }
+
+        // Switch camera (front/back)
+        async function switchCamera() {
+            if (localStream && callType === 'video') {
+                const videoTrack = localStream.getVideoTracks()[0];
+                const currentFacingMode = videoTrack.getSettings().facingMode;
+                const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+
+                try {
+                    const newStream = await navigator.mediaDevices.getUserMedia({
+                        audio: true,
+                        video: { facingMode: newFacingMode }
+                    });
+
+                    const newVideoTrack = newStream.getVideoTracks()[0];
+                    const sender = peerConnection.getSenders().find(s => s.track.kind === 'video');
+
+                    if (sender) {
+                        sender.replaceTrack(newVideoTrack);
+                    }
+
+                    videoTrack.stop();
+                    localStream.removeTrack(videoTrack);
+                    localStream.addTrack(newVideoTrack);
+                    localVideo.srcObject = localStream;
+
+                    sendMessageToRN('cameraSwitched', { facingMode: newFacingMode });
+                } catch (error) {
+                    console.error('Error switching camera:', error);
+                    sendMessageToRN('error', { message: 'Failed to switch camera' });
+                }
+            }
+        }
+
+        // End call
+        function endCall() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            if (peerConnection) {
+                peerConnection.close();
+            }
+            sendMessageToRN('callEnded', {});
+        }
+
+        // Listen for messages from React Native
+        window.addEventListener('message', (event) => {
+            try {
+                const message = JSON.parse(event.data);
+
+                switch (message.type) {
+                    case 'initialize':
+                        initializeCall(message.data);
+                        break;
+                    case 'offer':
+                        handleOffer(message.data);
+                        break;
+                    case 'answer':
+                        handleAnswer(message.data);
+                        break;
+                    case 'iceCandidate':
+                        handleIceCandidate(message.data);
+                        break;
+                    case 'toggleCamera':
+                        toggleCamera();
+                        break;
+                    case 'toggleMicrophone':
+                        toggleMicrophone();
+                        break;
+                    case 'switchCamera':
+                        switchCamera();
+                        break;
+                    case 'endCall':
+                        endCall();
+                        break;
+                }
+            } catch (error) {
+                console.error('Error processing message:', error);
+            }
+        });
+
+        // Notify React Native that WebView is ready
+        sendMessageToRN('ready', {});
+    </script>
+</body>
+</html>
