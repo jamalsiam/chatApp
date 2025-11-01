@@ -41,7 +41,7 @@ const JitsiConfig = {
 };
 
 /**
- * Generate Jitsi Meet room URL
+ * Generate Jitsi Meet room URL for direct call entry
  * @param {string} roomName - Unique room identifier (use callId)
  * @param {string} displayName - User's display name
  * @param {boolean} isVideoCall - true for video, false for audio only
@@ -54,28 +54,43 @@ export const createJitsiUrl = (roomName, displayName = 'Guest', isVideoCall = tr
   // Base URL
   const baseUrl = `${JitsiConfig.serverUrl}/${cleanRoomName}`;
 
-  // Configuration as URL hash
-  const config = {
-    ...JitsiConfig.defaultConfig,
-    // Start with video muted if audio-only call
-    startWithVideoMuted: !isVideoCall,
-  };
+  // Configuration parameters for direct entry
+  const configParams = [
+    // User info
+    `userInfo.displayName=${encodeURIComponent(displayName)}`,
 
-  // Build URL with config
-  // Format: https://meet.jit.si/RoomName#config.prejoinPageEnabled=false&userInfo.displayName=John
-  const params = new URLSearchParams();
+    // CRITICAL: Skip pre-join page - join directly!
+    'config.prejoinPageEnabled=false',
 
-  // Add display name
-  params.append('userInfo.displayName', displayName);
+    // Auto-start settings
+    'config.startWithAudioMuted=false',
+    `config.startWithVideoMuted=${!isVideoCall}`,
 
-  // Add config parameters
-  params.append('config.prejoinPageEnabled', 'false');
-  params.append('config.startWithAudioMuted', 'false');
-  params.append('config.startWithVideoMuted', (!isVideoCall).toString());
-  params.append('config.disableInviteFunctions', 'true');
+    // UI customization - cleaner interface
+    'config.disableInviteFunctions=true',
+    'config.enableWelcomePage=false',
+    'config.hideConferenceSubject=true',
+    'config.hideConferenceTimer=false',
 
-  // Return full URL
-  return `${baseUrl}#${params.toString()}`;
+    // Toolbar - show essential buttons only
+    'config.toolbarButtons=["microphone","camera","hangup","chat","tileview"]',
+
+    // Mobile optimizations
+    'config.disableDeepLinking=true',
+    'config.enableClosePage=true', // Enable close page event
+
+    // Interface options
+    'interfaceConfig.SHOW_JITSI_WATERMARK=false',
+    'interfaceConfig.SHOW_WATERMARK_FOR_GUESTS=false',
+    'interfaceConfig.MOBILE_APP_PROMO=false',
+    'interfaceConfig.SHOW_CHROME_EXTENSION_BANNER=false',
+  ];
+
+  // Join config params with &
+  const configString = configParams.join('&');
+
+  // Return URL with hash fragment
+  return `${baseUrl}#${configString}`;
 };
 
 /**

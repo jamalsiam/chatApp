@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { Alert, StyleSheet, Text, View, ActivityIndicator, BackHandler } from 'react-native';
 import { WebView } from 'react-native-webview';
 import callService from '../services/callService';
 import { createJitsiUrl } from '../config/jitsiConfig';
@@ -30,9 +30,16 @@ export default function ActiveCallScreen({ route, navigation }) {
       }
     });
 
+    // Handle Android hardware back button
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleEndCall();
+      return true; // Prevent default back behavior
+    });
+
     return () => {
       clearInterval(durationInterval.current);
       unsubscribe();
+      backHandler.remove();
     };
   }, []);
 
@@ -50,17 +57,43 @@ export default function ActiveCallScreen({ route, navigation }) {
 
   const handleWebViewMessage = (event) => {
     try {
-      const data = JSON.parse(event.nativeEvent.data);
-      console.log('Jitsi Meet message:', data);
+      const message = event.nativeEvent.data;
+      console.log('Jitsi Meet message:', message);
 
-      // Handle Jitsi Meet events
-      // Jitsi can send various events (readyToClose, participantLeft, etc.)
-      if (data.type === 'readyToClose' || data.event === 'readyToClose') {
-        // User left the room
+      // Try to parse as JSON
+      let data;
+      try {
+        data = JSON.parse(message);
+      } catch (e) {
+        // Not JSON, might be a string event
+        if (message.includes('readyToClose') || message.includes('videoConferenceLeft')) {
+          console.log('User left the call - returning to chat');
+          handleEndCall();
+        }
+        return;
+      }
+
+      // Handle Jitsi IFrame API events
+      const eventName = data.event || data.type;
+
+      console.log('Jitsi event:', eventName);
+
+      // Events that indicate call ended
+      if (
+        eventName === 'readyToClose' ||
+        eventName === 'videoConferenceLeft' ||
+        eventName === 'hangup'
+      ) {
+        console.log('Call ended - returning to chat');
         handleEndCall();
       }
+
+      // Log other events for debugging
+      if (eventName === 'videoConferenceJoined') {
+        console.log('Successfully joined the call');
+      }
     } catch (error) {
-      console.log('WebView message (non-JSON):', event.nativeEvent.data);
+      console.error('Error handling WebView message:', error);
     }
   };
 
@@ -80,6 +113,40 @@ export default function ActiveCallScreen({ route, navigation }) {
     return mins.toString().padStart(2, '0') + ':' + secs.toString().padStart(2, '0');
   };
 
+  // Inject JavaScript to listen for Jitsi events
+  const injectedJavaScript = `
+    (function() {
+      console.log('Jitsi event listener injected');
+
+      // Listen for Jitsi IFrame API events
+      window.addEventListener('message', function(event) {
+        try {
+          const data = event.data;
+
+          // Forward Jitsi events to React Native
+          if (data && typeof data === 'object') {
+            // Send to React Native
+            window.ReactNativeWebView.postMessage(JSON.stringify(data));
+
+            console.log('Jitsi event received:', data.event || data.type);
+          }
+        } catch (error) {
+          console.error('Error handling Jitsi event:', error);
+        }
+      });
+
+      // Also listen for beforeunload (when page closes)
+      window.addEventListener('beforeunload', function() {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          event: 'readyToClose'
+        }));
+      });
+
+      console.log('Jitsi event listeners ready');
+    })();
+    true; // Required for injected JavaScript
+  `;
+
   return (
     <View style={styles.container}>
       <WebView
@@ -92,23 +159,26 @@ export default function ActiveCallScreen({ route, navigation }) {
         javaScriptEnabled={true}
         domStorageEnabled={true}
         startInLoadingState={true}
+        injectedJavaScript={injectedJavaScript}
         onMessage={handleWebViewMessage}
         onError={handleWebViewError}
         onLoadEnd={() => setIsLoading(false)}
         renderLoading={() => (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#6C5CE7" />
-            <Text style={styles.loadingText}>Loading video call...</Text>
+            <Text style={styles.loadingText}>Joining call...</Text>
             <Text style={styles.roomText}>Room: {callId}</Text>
           </View>
         )}
       />
 
-      {/* Top info overlay */}
-      <View style={styles.topOverlay}>
-        <Text style={styles.userName}>{otherUser?.displayName || 'Unknown'}</Text>
-        <Text style={styles.duration}>{formatDuration(duration)}</Text>
-      </View>
+      {/* Minimal top overlay - fades after 3 seconds */}
+      {duration < 5 && (
+        <View style={styles.topOverlay}>
+          <Text style={styles.userName}>{otherUser?.displayName || 'Unknown'}</Text>
+          <Text style={styles.statusText}>Joining call...</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -159,7 +229,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 5,
   },
-  duration: {
+  statusText: {
     fontSize: 14,
     color: '#ddd',
   },
