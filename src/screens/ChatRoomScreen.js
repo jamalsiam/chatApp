@@ -77,7 +77,7 @@ export default function ChatRoomScreen({ route, navigation }) {
         const unsubscribe = chatService.listenToMessages(chatId, (msgs) => {
             setMessages(msgs);
             setLoading(false);
-        });
+        }, currentUser.uid);
 
         // Mark messages as read in chat list
         chatService.markAsRead(chatId, currentUser.uid);
