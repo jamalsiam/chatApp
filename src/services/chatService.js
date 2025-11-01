@@ -352,6 +352,13 @@ class ChatService {
 
       for (const docSnap of snapshot.docs) {
         const chatData = docSnap.data();
+
+        // Filter out chats deleted by this user
+        const deletedBy = chatData.deletedBy || [];
+        if (deletedBy.includes(userId)) {
+          continue; // Skip this chat
+        }
+
         const otherUserId = chatData.participants.find(id => id !== userId);
 
         const userDoc = await getDoc(doc(db, 'users', otherUserId));
@@ -749,6 +756,67 @@ class ChatService {
         callback(typing);
       }
     });
+  }
+
+  // Delete Chat Room
+  async deleteChatRoom(chatId, userId) {
+    try {
+      const chatRef = doc(db, 'chats', chatId);
+      const chatDoc = await getDoc(chatRef);
+
+      if (!chatDoc.exists()) {
+        return { success: false, error: 'Chat not found' };
+      }
+
+      const chatData = chatDoc.data();
+
+      // Check if user is a participant
+      if (!chatData.participants.includes(userId)) {
+        return { success: false, error: 'Unauthorized' };
+      }
+
+      // For one-on-one chats or when user wants to delete the chat
+      // We'll use a "deletedBy" field to track who deleted it
+      // If both users delete it, we can actually delete the document
+
+      const deletedBy = chatData.deletedBy || [];
+
+      if (!deletedBy.includes(userId)) {
+        deletedBy.push(userId);
+      }
+
+      // If all participants have deleted the chat, remove it completely
+      if (deletedBy.length >= chatData.participants.length) {
+        // Delete all messages in this chat
+        const messagesQuery = query(
+          collection(db, 'messages'),
+          where('chatId', '==', chatId)
+        );
+        const messagesSnapshot = await getDocs(messagesQuery);
+
+        // Delete messages in batches
+        const deletePromises = messagesSnapshot.docs.map(doc =>
+          updateDoc(doc.ref, { deleted: true })
+        );
+        await Promise.all(deletePromises);
+
+        // Mark chat as deleted
+        await updateDoc(chatRef, {
+          deleted: true,
+          deletedAt: serverTimestamp(),
+          deletedBy: deletedBy
+        });
+      } else {
+        // Just mark that this user deleted it
+        await updateDoc(chatRef, {
+          deletedBy: deletedBy
+        });
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   }
 }
 
