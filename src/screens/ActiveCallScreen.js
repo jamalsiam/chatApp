@@ -4,22 +4,21 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { Camera } from 'expo-camera';
 import { Audio } from 'expo-av';
 import callService from '../services/callService';
-import NativeWebRTCView from '../components/NativeWebRTCView';
+import AgoraVideoCall from '../components/AgoraVideoCall';
 
 export default function ActiveCallScreen({ route, navigation }) {
   const { callId, callType, isInitiator, otherUser } = route.params;
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
-  const [isReady, setIsReady] = useState(false);
-  const [callQuality, setCallQuality] = useState('good');
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [remoteOffer, setRemoteOffer] = useState(null);
-  const [remoteAnswer, setRemoteAnswer] = useState(null);
-  const [remoteIceCandidate, setRemoteIceCandidate] = useState(null);
-  const [webrtcCommand, setWebrtcCommand] = useState(null);
+  const [agoraCommand, setAgoraCommand] = useState(null);
+  const [userJoined, setUserJoined] = useState(false);
   const durationInterval = useRef(null);
+
+  // Use callId as Agora channel name
+  const channelName = callId;
 
   // Request permissions on mount
   useEffect(() => {
@@ -80,6 +79,7 @@ export default function ActiveCallScreen({ route, navigation }) {
     }
   };
 
+  // Start duration timer
   useEffect(() => {
     if (!permissionsGranted) return;
 
@@ -91,69 +91,43 @@ export default function ActiveCallScreen({ route, navigation }) {
       if (callData.status === 'ended') {
         handleEndCall();
       }
-
-      if (!isInitiator && callData.offer && isReady) {
-        console.log('Received offer from Firebase');
-        setRemoteOffer(JSON.parse(callData.offer));
-      }
-
-      if (isInitiator && callData.answer && isReady) {
-        console.log('Received answer from Firebase');
-        setRemoteAnswer(JSON.parse(callData.answer));
-      }
-
-      const iceCandidates = callData.iceCandidates || { caller: [], receiver: [] };
-      const candidateKey = isInitiator ? 'receiver' : 'caller';
-
-      if (iceCandidates[candidateKey].length > 0) {
-        const lastCandidate = iceCandidates[candidateKey][iceCandidates[candidateKey].length - 1];
-        setRemoteIceCandidate(JSON.parse(lastCandidate));
-      }
     });
 
     return () => {
       clearInterval(durationInterval.current);
       unsubscribe();
     };
-  }, [isReady, permissionsGranted]);
+  }, [permissionsGranted]);
 
-  // WebRTC callbacks
-  const handleWebRTCReady = () => {
-    console.log('Native WebRTC ready');
-    setIsReady(true);
+  // Agora event handlers
+  const handleUserJoined = (uid) => {
+    console.log('User joined:', uid);
+    setUserJoined(true);
   };
 
-  const handleWebRTCOffer = async (offer) => {
-    console.log('Generated offer, saving to Firebase...');
-    await callService.saveOffer(callId, offer);
+  const handleUserLeft = (uid) => {
+    console.log('User left:', uid);
+    setUserJoined(false);
   };
 
-  const handleWebRTCAnswer = async (answer) => {
-    console.log('Generated answer, saving to Firebase...');
-    await callService.saveAnswer(callId, answer);
-  };
+  const handleAgoraError = (error) => {
+    console.error('Agora error:', error);
+    setErrorMessage(error.message || 'Call error');
 
-  const handleWebRTCIceCandidate = async (candidate) => {
-    console.log('Generated ICE candidate');
-    await callService.saveIceCandidate(callId, candidate, isInitiator);
-  };
-
-  const handleWebRTCError = (error) => {
-    console.error('WebRTC error:', error);
-    setErrorMessage(error.message || 'Unknown error');
-    Alert.alert('Call Error', error.message || 'Failed to establish connection');
-  };
-
-  const handleConnectionStateChange = (state) => {
-    console.log('Connection state changed:', state);
-    if (state === 'failed' || state === 'disconnected') {
-      Alert.alert('Connection Error', 'Call connection was lost');
-      handleEndCall();
+    if (error.message && error.message.includes('App ID')) {
+      Alert.alert(
+        'Configuration Error',
+        'Please configure your Agora App ID in src/config/agoraConfig.js\n\nGet your free App ID from: https://console.agora.io/',
+        [{ text: 'OK', onPress: () => handleEndCall() }]
+      );
+    } else {
+      Alert.alert('Call Error', error.message || 'An error occurred during the call');
     }
   };
 
-  const handleQualityChange = (quality) => {
-    setCallQuality(quality.quality);
+  const handleConnectionStateChange = (state, reason) => {
+    console.log('Connection state:', state, 'Reason:', reason);
+    // You can add connection quality indicators here
   };
 
   const handleEndCall = async () => {
@@ -170,34 +144,16 @@ export default function ActiveCallScreen({ route, navigation }) {
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
-    setWebrtcCommand({ type: 'toggleMicrophone', timestamp: Date.now() });
+    setAgoraCommand({ type: 'toggleMicrophone', timestamp: Date.now() });
   };
 
   const toggleCamera = () => {
     setIsCameraOff(!isCameraOff);
-    setWebrtcCommand({ type: 'toggleCamera', timestamp: Date.now() });
+    setAgoraCommand({ type: 'toggleCamera', timestamp: Date.now() });
   };
 
   const switchCamera = () => {
-    setWebrtcCommand({ type: 'switchCamera', timestamp: Date.now() });
-  };
-
-  const getQualityColor = () => {
-    switch (callQuality) {
-      case 'good': return '#00D856';
-      case 'fair': return '#FFD700';
-      case 'poor': return '#FF4757';
-      default: return '#00D856';
-    }
-  };
-
-  const getQualityIcon = () => {
-    switch (callQuality) {
-      case 'good': return 'wifi';
-      case 'fair': return 'wifi-outline';
-      case 'poor': return 'warning';
-      default: return 'wifi';
-    }
+    setAgoraCommand({ type: 'switchCamera', timestamp: Date.now() });
   };
 
   const formatDuration = (seconds) => {
@@ -218,44 +174,35 @@ export default function ActiveCallScreen({ route, navigation }) {
         </View>
       ) : (
         <>
-          <NativeWebRTCView
+          <AgoraVideoCall
+            channelName={channelName}
+            uid={0}
+            isHost={true}
             callType={callType}
-            isInitiator={isInitiator}
-            onOffer={handleWebRTCOffer}
-            onAnswer={handleWebRTCAnswer}
-            onIceCandidate={handleWebRTCIceCandidate}
-            onError={handleWebRTCError}
-            onReady={handleWebRTCReady}
+            onUserJoined={handleUserJoined}
+            onUserLeft={handleUserLeft}
+            onError={handleAgoraError}
             onConnectionStateChange={handleConnectionStateChange}
-            onQualityChange={handleQualityChange}
-            remoteOffer={remoteOffer}
-            remoteAnswer={remoteAnswer}
-            remoteIceCandidate={remoteIceCandidate}
-            commands={webrtcCommand}
+            commands={agoraCommand}
           />
 
           <View style={styles.topOverlay}>
-            <View style={styles.topLeft}>
-              <Icon
-                name={getQualityIcon()}
-                size={16}
-                color={getQualityColor()}
-                style={styles.qualityIcon}
-              />
-              <Text style={[styles.qualityText, { color: getQualityColor() }]}>
-                {callQuality}
-              </Text>
-            </View>
             <View style={styles.topCenter}>
               <Text style={styles.userName}>{otherUser?.displayName || 'Unknown'}</Text>
               <Text style={styles.duration}>{formatDuration(duration)}</Text>
+              {!userJoined && (
+                <Text style={styles.statusText}>Calling...</Text>
+              )}
             </View>
           </View>
 
           <View style={styles.controlsOverlay}>
             {callType === 'video' && (
               <>
-                <TouchableOpacity style={styles.controlButton} onPress={toggleCamera}>
+                <TouchableOpacity
+                  style={[styles.controlButton, isCameraOff && styles.controlButtonActive]}
+                  onPress={toggleCamera}
+                >
                   <Icon name={isCameraOff ? 'videocam-off' : 'videocam'} size={28} color="#fff" />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.controlButton} onPress={switchCamera}>
@@ -264,7 +211,10 @@ export default function ActiveCallScreen({ route, navigation }) {
               </>
             )}
 
-            <TouchableOpacity style={styles.controlButton} onPress={toggleMute}>
+            <TouchableOpacity
+              style={[styles.controlButton, isMuted && styles.controlButtonActive]}
+              onPress={toggleMute}
+            >
               <Icon name={isMuted ? 'mic-off' : 'mic'} size={28} color="#fff" />
             </TouchableOpacity>
 
@@ -303,20 +253,16 @@ const styles = StyleSheet.create({
     top: 50,
     left: 0,
     right: 0,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: 'rgba(0,0,0,0.5)',
     paddingVertical: 15,
     paddingHorizontal: 20,
     zIndex: 10,
   },
-  topLeft: { flexDirection: 'row', alignItems: 'center' },
-  topCenter: { alignItems: 'center', flex: 1 },
-  qualityIcon: { marginRight: 6 },
-  qualityText: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
+  topCenter: { alignItems: 'center' },
   userName: { fontSize: 20, fontWeight: 'bold', color: '#fff', marginBottom: 5 },
   duration: { fontSize: 16, color: '#ddd' },
+  statusText: { fontSize: 14, color: '#FFD700', marginTop: 5 },
   controlsOverlay: {
     position: 'absolute',
     bottom: 40,
@@ -336,6 +282,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  activeButton: { backgroundColor: '#6C5CE7' },
+  controlButtonActive: {
+    backgroundColor: 'rgba(255, 71, 87, 0.7)',
+  },
   endButton: { backgroundColor: '#FF4757', width: 70, height: 70, borderRadius: 35 },
 });
