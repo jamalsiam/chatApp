@@ -49,7 +49,6 @@ export default function FollowersListScreen({ route, navigation }) {
         setFollowingMap(followMap);
       }
     } catch (error) {
-      console.error('Error loading users:', error);
       Alert.alert('Error', 'Failed to load users');
     } finally {
       setLoading(false);

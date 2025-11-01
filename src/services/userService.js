@@ -51,7 +51,6 @@ class UserService {
         throw new Error('User not found');
       }
     } catch (error) {
-      console.error('Error getting user profile:', error);
       throw error;
     }
   }
@@ -74,7 +73,6 @@ class UserService {
 
       return { success: true };
     } catch (error) {
-      console.error('❌ Error updating profile:', error);
       return { success: false, error: error.message };
     }
   }
@@ -109,7 +107,6 @@ class UserService {
   async uploadGalleryPost(userId, mediaUri, mediaType) {
     try {
 
-
       // Create form data
       const formData = new FormData();
 
@@ -135,7 +132,6 @@ class UserService {
       formData.append('timestamp', Date.now().toString());
 
 
-
       const response = await fetch(LOCAL_SERVER_CONFIG.uploadUrl, {
         method: 'POST',
         body: formData,
@@ -153,7 +149,6 @@ class UserService {
       const mediaUrl = result.url;
 
 
-
       // Save post reference in Firestore
       const postData = {
         userId: userId,
@@ -162,7 +157,9 @@ class UserService {
         createdAt: serverTimestamp()
       };
 
+
       const postRef = await addDoc(collection(db, 'gallery_posts'), postData);
+
 
       return {
         success: true,
@@ -170,7 +167,6 @@ class UserService {
         mediaUrl: mediaUrl
       };
     } catch (error) {
-      console.error('❌ Error uploading gallery post:', error);
       throw error;
     }
   }
@@ -182,23 +178,32 @@ class UserService {
       const postsRef = collection(db, 'gallery_posts');
       const q = query(
         postsRef,
-        where('userId', '==', userId),
-        orderBy('createdAt', 'desc')
+        where('userId', '==', userId)
       );
 
       const snapshot = await getDocs(q);
       const posts = [];
 
+
       snapshot.forEach((doc) => {
+        const data = doc.data();
         posts.push({
           id: doc.id,
-          ...doc.data()
+          ...data,
+          // Ensure timestamp is available for sorting
+          timestamp: data.createdAt || data.timestamp
         });
+      });
+
+      // Sort by timestamp on client side to avoid Firestore index requirement
+      posts.sort((a, b) => {
+        const timeA = a.timestamp?.toDate?.() || a.createdAt?.toDate?.() || new Date(0);
+        const timeB = b.timestamp?.toDate?.() || b.createdAt?.toDate?.() || new Date(0);
+        return timeB - timeA; // Newest first
       });
 
       return posts;
     } catch (error) {
-      console.error('Error getting gallery posts:', error);
       return [];
     }
   }
@@ -274,7 +279,6 @@ class UserService {
       }
       return false;
     } catch (error) {
-      console.error('Error checking follow status:', error);
       return false;
     }
   }
@@ -324,7 +328,6 @@ class UserService {
       }
       return [];
     } catch (error) {
-      console.error('Error getting following:', error);
       return [];
     }
   }
@@ -351,7 +354,6 @@ class UserService {
 
       return users;
     } catch (error) {
-      console.error('Error searching users:', error);
       return [];
     }
   }
@@ -414,8 +416,99 @@ class UserService {
 
       return users;
     } catch (error) {
-      console.error('Error getting users:', error);
       return [];
+    }
+  }
+
+  // Block user
+  async blockUser(currentUserId, targetUserId) {
+    try {
+      const currentUserRef = doc(db, 'users', currentUserId);
+      await updateDoc(currentUserRef, {
+        blockedUsers: arrayUnion(targetUserId)
+      });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Unblock user
+  async unblockUser(currentUserId, targetUserId) {
+    try {
+      const currentUserRef = doc(db, 'users', currentUserId);
+      await updateDoc(currentUserRef, {
+        blockedUsers: arrayRemove(targetUserId)
+      });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Mute user
+  async muteUser(currentUserId, targetUserId) {
+    try {
+      const currentUserRef = doc(db, 'users', currentUserId);
+      await updateDoc(currentUserRef, {
+        mutedUsers: arrayUnion(targetUserId)
+      });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Unmute user
+  async unmuteUser(currentUserId, targetUserId) {
+    try {
+      const currentUserRef = doc(db, 'users', currentUserId);
+      await updateDoc(currentUserRef, {
+        mutedUsers: arrayRemove(targetUserId)
+      });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Report user
+  async reportUser(reporterId, reportedUserId, reason) {
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reporterId,
+        reportedUserId,
+        reason,
+        timestamp: serverTimestamp(),
+        status: 'pending'
+      });
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Check if user is blocked
+  async isUserBlocked(currentUserId, targetUserId) {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUserId));
+      const userData = userDoc.data();
+      const blockedUsers = userData.blockedUsers || [];
+      return blockedUsers.includes(targetUserId);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Check if user is muted
+  async isUserMuted(currentUserId, targetUserId) {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUserId));
+      const userData = userDoc.data();
+      const mutedUsers = userData.mutedUsers || [];
+      return mutedUsers.includes(targetUserId);
+    } catch (error) {
+      return false;
     }
   }
 }

@@ -52,19 +52,27 @@ const galleryStorage = multer.diskStorage({
 const fileFilter = function (req, file, cb) {
   const filename = file.originalname.toLowerCase();
   const mimetype = file.mimetype.toLowerCase();
-  
+
   const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
   const videoExtensions = ['.mp4', '.mov', '.avi', '.webm', '.m4v', '.3gp'];
-  
+  const audioExtensions = ['.mp3', '.m4a', '.aac', '.wav', '.ogg', '.opus'];
+  const documentExtensions = ['.pdf', '.doc', '.docx', '.txt', '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.rar'];
+
   const hasImageExt = imageExtensions.some(ext => filename.endsWith(ext));
   const hasVideoExt = videoExtensions.some(ext => filename.endsWith(ext));
+  const hasAudioExt = audioExtensions.some(ext => filename.endsWith(ext));
+  const hasDocExt = documentExtensions.some(ext => filename.endsWith(ext));
   const hasImageMime = mimetype.startsWith('image/');
   const hasVideoMime = mimetype.startsWith('video/');
-  
-  if (hasImageExt || hasVideoExt || hasImageMime || hasVideoMime) {
+  const hasAudioMime = mimetype.startsWith('audio/');
+  const hasDocMime = mimetype.includes('pdf') || mimetype.includes('document') ||
+                     mimetype.includes('text') || mimetype.includes('zip') ||
+                     mimetype.includes('spreadsheet') || mimetype.includes('presentation');
+
+  if (hasImageExt || hasVideoExt || hasAudioExt || hasDocExt || hasImageMime || hasVideoMime || hasAudioMime || hasDocMime) {
     return cb(null, true);
   } else {
-    cb(new Error('Only images and videos allowed!'));
+    cb(new Error('Only images, videos, audio, and documents allowed!'));
   }
 };
 
@@ -85,7 +93,7 @@ app.use('/media', express.static(uploadsDir, {
   setHeaders: (res, filepath) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    
+
     const ext = path.extname(filepath).toLowerCase();
     if (['.jpg', '.jpeg'].includes(ext)) {
       res.setHeader('Content-Type', 'image/jpeg');
@@ -99,6 +107,14 @@ app.use('/media', express.static(uploadsDir, {
       res.setHeader('Content-Type', 'video/mp4');
     } else if (ext === '.mov') {
       res.setHeader('Content-Type', 'video/quicktime');
+    } else if (ext === '.m4a') {
+      res.setHeader('Content-Type', 'audio/mp4');
+    } else if (ext === '.mp3') {
+      res.setHeader('Content-Type', 'audio/mpeg');
+    } else if (ext === '.wav') {
+      res.setHeader('Content-Type', 'audio/wav');
+    } else if (ext === '.ogg' || ext === '.opus') {
+      res.setHeader('Content-Type', 'audio/ogg');
     }
   }
 }));

@@ -1,6 +1,8 @@
-import { format } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
+import { doc, getDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   StyleSheet,
@@ -10,6 +12,7 @@ import {
   View
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { db } from '../config/firebase';
 import authService from '../services/authService';
 import chatService from '../services/chatService';
 
@@ -17,6 +20,9 @@ export default function ChatListScreen({ navigation }) {
   const [chats, setChats] = useState([]);
   const [filteredChats, setFilteredChats] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [mutedUsers, setMutedUsers] = useState([]);
+  const [blockedUsers, setBlockedUsers] = useState([]);
   const currentUser = authService.getCurrentUser();
 
   useEffect(() => {
@@ -24,9 +30,27 @@ export default function ChatListScreen({ navigation }) {
     const unsubscribe = chatService.listenToChatList(currentUser.uid, (chatList) => {
       setChats(chatList);
       setFilteredChats(chatList);
+      setLoading(false);
     });
 
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    // Load muted and blocked users list
+    const loadUserLists = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          setMutedUsers(userDoc.data().mutedUsers || []);
+          setBlockedUsers(userDoc.data().blockedUsers || []);
+        }
+      } catch (error) {
+        console.error('Error loading user lists:', error);
+      }
+    };
+
+    loadUserLists();
   }, []);
 
   const handleSearch = (query) => {
@@ -34,9 +58,12 @@ export default function ChatListScreen({ navigation }) {
     if (query.trim() === '') {
       setFilteredChats(chats);
     } else {
-      const filtered = chats.filter((chat) =>
-        chat.otherUser?.displayName?.toLowerCase().includes(query.toLowerCase())
-      );
+      const filtered = chats.filter((chat) => {
+        if (chat.isGroup) {
+          return chat.groupName?.toLowerCase().includes(query.toLowerCase());
+        }
+        return chat.otherUser?.displayName?.toLowerCase().includes(query.toLowerCase());
+      });
       setFilteredChats(filtered);
     }
   };
@@ -51,49 +78,138 @@ export default function ChatListScreen({ navigation }) {
       .substring(0, 2);
   };
 
+  const formatTimestamp = (date) => {
+    if (!date) return '';
+
+    if (isToday(date)) {
+      return format(date, 'HH:mm');
+    } else if (isYesterday(date)) {
+      return 'Yesterday';
+    } else {
+      return format(date, 'dd/MM/yyyy');
+    }
+  };
+
   const renderChatItem = ({ item }) => {
     const unreadCount = item.unreadCount?.[currentUser?.uid] || 0;
     const lastMessageTime = item.lastMessageTime?.toDate?.();
+    const isGroup = item.isGroup;
+
+    // Check if current user sent the last message
+    const isSentByMe = item.lastMessageSenderId === currentUser?.uid;
+    const isLastMessageRead = item.lastMessageRead || false;
+
+    // Check if other user is typing
+    const typing = item.typing || {};
+    const otherUserId = item.otherUser?.id;
+    let isOtherUserTyping = false;
+
+    if (!isGroup && otherUserId && typing[otherUserId]) {
+      const typingTimestamp = typing[otherUserId];
+      const now = new Date();
+      const typingTime = typingTimestamp.toDate ? typingTimestamp.toDate() : new Date(typingTimestamp);
+      const diff = now - typingTime;
+      isOtherUserTyping = diff < 3000; // Consider typing if within last 3 seconds
+    }
+
+    // Check if this chat is muted or blocked
+    const isMuted = !isGroup && otherUserId && mutedUsers.includes(otherUserId);
+    const isBlocked = !isGroup && otherUserId && blockedUsers.includes(otherUserId);
+
+    // For groups, prepare group info
+    let displayName = isGroup ? item.groupName : item.otherUser?.displayName;
+    let displayPhoto = isGroup ? item.groupPhoto : item.otherUser?.photoURL;
+
+    // Show "Unknown User" for blocked users
+    if (isBlocked) {
+      displayName = 'Unknown User';
+      displayPhoto = null;
+    }
+
+    const memberCount = isGroup ? item.participants?.length : 0;
 
     return (
       <TouchableOpacity
         style={styles.chatItem}
-        onPress={() =>
-          navigation.navigate('ChatRoom', {
-            chatId: item.chatId,
-            otherUser: item.otherUser,
-          })
-        }
+        onPress={() => {
+          if (isGroup) {
+            navigation.navigate('ChatRoom', {
+              chatId: item.chatId,
+              otherUser: { displayName: item.groupName, photoURL: item.groupPhoto },
+              isGroup: true,
+              groupName: item.groupName,
+              groupPhoto: item.groupPhoto,
+              participants: item.participants,
+              admin: item.admin
+            });
+          } else {
+            navigation.navigate('ChatRoom', {
+              chatId: item.chatId,
+              otherUser: item.otherUser
+            });
+          }
+        }}
       >
         <View style={styles.avatarContainer}>
-          {item.otherUser?.photoURL ? (
+          {displayPhoto ? (
             <Image
-              source={{ uri: item.otherUser.photoURL }}
+              source={{ uri: displayPhoto }}
               style={styles.avatar}
             />
           ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarText}>
-                {getInitials(item.otherUser?.displayName)}
-              </Text>
+            <View style={[styles.avatarPlaceholder, isGroup && styles.groupAvatarPlaceholder]}>
+              {isGroup ? (
+                <Icon name="people" size={24} color="#fff" />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {getInitials(displayName)}
+                </Text>
+              )}
             </View>
           )}
-          {item.otherUser?.isOnline && <View style={styles.onlineIndicator} />}
+          {!isGroup && item.otherUser?.isOnline && <View style={styles.onlineIndicator} />}
         </View>
 
         <View style={styles.chatInfo}>
           <View style={styles.chatHeader}>
-            <Text style={styles.chatName}>{item.otherUser?.displayName}</Text>
-            {lastMessageTime && (
-              <Text style={styles.timestamp}>
-                {format(lastMessageTime, 'HH:mm')}
-              </Text>
-            )}
+            <View style={styles.chatNameContainer}>
+              <Text style={[
+                styles.chatName,
+                unreadCount > 0 && styles.unreadChatName
+              ]}>{displayName}</Text>
+              {isGroup && (
+                <Text style={styles.memberCount}>({memberCount})</Text>
+              )}
+            </View>
+            <View style={styles.timestampContainer}>
+              {isMuted && (
+                <Icon name="notifications-off" size={14} color="#888" style={styles.muteIcon} />
+              )}
+              {lastMessageTime && (
+                <Text style={styles.timestamp}>
+                  {formatTimestamp(lastMessageTime)}
+                </Text>
+              )}
+            </View>
           </View>
           <View style={styles.chatFooter}>
-            <Text style={styles.lastMessage} numberOfLines={1}>
-              {item.lastMessage || 'No messages yet'}
-            </Text>
+            <View style={styles.lastMessageContainer}>
+              {isSentByMe && !isOtherUserTyping && (
+                <Icon
+                  name={isLastMessageRead ? "checkmark-done" : "checkmark"}
+                  size={16}
+                  color={isLastMessageRead ? "#4A9EFF" : "#888"}
+                  style={styles.readIcon}
+                />
+              )}
+              <Text style={[
+                styles.lastMessage,
+                unreadCount > 0 && styles.unreadMessage,
+                isOtherUserTyping && styles.typingMessage
+              ]} numberOfLines={1}>
+                {isOtherUserTyping ? 'typing...' : (item.lastMessage || 'No messages yet')}
+              </Text>
+            </View>
             {unreadCount > 0 && (
               <View style={styles.unreadBadge}>
                 <Text style={styles.unreadText}>{unreadCount}</Text>
@@ -109,9 +225,17 @@ export default function ChatListScreen({ navigation }) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Chats</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('SearchUsers')}>
-          <Icon name="add-circle" size={28} color="#6C5CE7" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CreateGroup')}
+            style={styles.headerButton}
+          >
+            <Icon name="people" size={24} color="#6C5CE7" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('SearchUsers')}>
+            <Icon name="add-circle" size={28} color="#6C5CE7" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.searchContainer}>
@@ -125,7 +249,12 @@ export default function ChatListScreen({ navigation }) {
         />
       </View>
 
-      {filteredChats.length === 0 ? (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6C5CE7" />
+          <Text style={styles.loadingText}>Loading chats...</Text>
+        </View>
+      ) : filteredChats.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Icon name="chatbubbles-outline" size={80} color="#444" />
           <Text style={styles.emptyText}>No chats yet</Text>
@@ -169,6 +298,13 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    marginRight: 15,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -242,10 +378,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 5,
   },
+  chatNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   chatName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  unreadChatName: {
+    fontWeight: 'bold',
+  },
+  memberCount: {
+    fontSize: 13,
+    color: '#888',
+    marginLeft: 5,
+  },
+  groupAvatarPlaceholder: {
+    backgroundColor: '#6C5CE7',
+  },
+  timestampContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  muteIcon: {
+    marginRight: 2,
   },
   timestamp: {
     fontSize: 12,
@@ -256,10 +416,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  lastMessageContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  readIcon: {
+    marginRight: 4,
+  },
   lastMessage: {
     flex: 1,
     fontSize: 14,
     color: '#888',
+  },
+  unreadMessage: {
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  typingMessage: {
+    color: '#6C5CE7',
+    fontStyle: 'italic',
   },
   unreadBadge: {
     backgroundColor: '#6C5CE7',
@@ -274,6 +450,16 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#888',
+    fontSize: 14,
+    marginTop: 15,
   },
   emptyContainer: {
     flex: 1,

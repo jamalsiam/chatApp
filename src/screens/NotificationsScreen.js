@@ -42,7 +42,6 @@ export default function NotificationsScreen({ navigation }) {
       setNotifications(notifs);
       updateUnreadCount(notifs);
     } catch (error) {
-      console.error('Error loading notifications:', error);
     } finally {
       setLoading(false);
     }
