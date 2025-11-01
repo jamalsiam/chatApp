@@ -24,6 +24,7 @@ import { db } from '../config/firebase';
 import authService from '../services/authService';
 import chatService from '../services/chatService';
 import userService from '../services/userService';
+import callService from '../services/callService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -794,6 +795,33 @@ export default function ChatRoomScreen({ route, navigation }) {
         );
     };
 
+    const handleCall = async (callType) => {
+        if (isBlocked || isBlockedByOther) {
+            Alert.alert('Cannot Call', 'You cannot call this user');
+            return;
+        }
+
+        try {
+            const result = await callService.initiateCall(
+                currentUser.uid,
+                otherUser.id,
+                callType
+            );
+
+            if (result.success) {
+                navigation.navigate('OutgoingCall', {
+                    callId: result.callId,
+                    receiver: otherUserData,
+                    callType
+                });
+            } else {
+                Alert.alert('Error', 'Failed to start call');
+            }
+        } catch (error) {
+            Alert.alert('Error', 'Failed to start call');
+        }
+    };
+
     const handleUserOptions = () => {
         Alert.alert(
             otherUserData.displayName,
@@ -1102,6 +1130,12 @@ export default function ChatRoomScreen({ route, navigation }) {
                 </TouchableOpacity>
 
                 <View style={styles.headerRight}>
+                    <TouchableOpacity onPress={() => handleCall('video')} style={styles.callButton}>
+                        <Icon name="videocam" size={22} color="#6C5CE7" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleCall('audio')} style={styles.callButton}>
+                        <Icon name="call" size={22} color="#6C5CE7" />
+                    </TouchableOpacity>
                     <Text style={styles.coinsText}>{userBalance} 💰</Text>
                     <TouchableOpacity onPress={handleUserOptions} style={styles.menuButton}>
                         <Icon name="ellipsis-vertical" size={20} color="#fff" />
@@ -1401,7 +1435,12 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
     },
     headerRight: {
-        alignItems: 'flex-end',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    callButton: {
+        padding: 6,
     },
     coinsText: {
         fontSize: 14,

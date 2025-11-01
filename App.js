@@ -9,6 +9,8 @@ import { db } from './src/config/firebase';
 import authService from './src/services/authService';
 import chatService from './src/services/chatService';
 import notificationService from './src/services/NotificationService';
+import callService from './src/services/callService';
+import userService from './src/services/userService';
 
 // Auth Screens
 import LoginScreen from './src/screens/LoginScreen';
@@ -226,6 +228,32 @@ export default function App() {
     }, 1000);
 
     return () => clearInterval(interval);
+  }, [isAuthenticated]);
+
+  // Listen for incoming calls
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const user = authService.getCurrentUser();
+    if (!user) return;
+
+    const unsubscribe = callService.listenToIncomingCalls(user.uid, async (incomingCalls) => {
+      if (incomingCalls.length > 0 && navigationRef.current) {
+        const call = incomingCalls[0];
+
+        // Get caller info
+        const callerInfo = await userService.getUserProfile(call.callerId);
+
+        navigationRef.current.navigate('IncomingCall', {
+          callId: call.id,
+          callerId: call.callerId,
+          callType: call.callType,
+          caller: callerInfo
+        });
+      }
+    });
+
+    return () => unsubscribe();
   }, [isAuthenticated]);
 
   if (loading) {
