@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import callService from '../services/callService';
-import { createRoomUrl } from '../config/wherebyConfig';
+import { createJitsiUrl } from '../config/jitsiConfig';
 
 export default function ActiveCallScreen({ route, navigation }) {
   const { callId, callType, isInitiator, otherUser } = route.params;
@@ -11,14 +11,14 @@ export default function ActiveCallScreen({ route, navigation }) {
   const durationInterval = useRef(null);
   const webViewRef = useRef(null);
 
-  // Generate Whereby room URL
+  // Generate Jitsi Meet room URL
   const displayName = otherUser?.displayName || 'User';
   const isVideoCall = callType === 'video';
-  const roomUrl = createRoomUrl(callId, displayName, isVideoCall);
+  const roomUrl = createJitsiUrl(callId, displayName, isVideoCall);
 
   // Start duration timer and listen for call status
   useEffect(() => {
-    console.log('Starting call with Whereby URL:', roomUrl);
+    console.log('Starting call with Jitsi Meet URL:', roomUrl);
 
     durationInterval.current = setInterval(() => {
       setDuration(prev => prev + 1);
@@ -51,10 +51,11 @@ export default function ActiveCallScreen({ route, navigation }) {
   const handleWebViewMessage = (event) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      console.log('WebView message:', data);
+      console.log('Jitsi Meet message:', data);
 
-      // Handle Whereby events
-      if (data.type === 'app.room_left') {
+      // Handle Jitsi Meet events
+      // Jitsi can send various events (readyToClose, participantLeft, etc.)
+      if (data.type === 'readyToClose' || data.event === 'readyToClose') {
         // User left the room
         handleEndCall();
       }
