@@ -51,45 +51,64 @@ export const createJitsiUrl = (roomName, displayName = 'Guest', isVideoCall = tr
   // Clean room name (remove special characters)
   const cleanRoomName = roomName.replace(/[^a-zA-Z0-9-_]/g, '');
 
-  // Base URL
+  // Base URL with displayName as URL parameter (this sets the name automatically)
   const baseUrl = `${JitsiConfig.serverUrl}/${cleanRoomName}`;
 
-  // Configuration parameters for direct entry
-  const configParams = [
-    // User info
-    `userInfo.displayName=${encodeURIComponent(displayName)}`,
+  // Build config object - using proper configOverwrite format
+  const config = {
+    // CRITICAL: Skip pre-join page completely
+    prejoinConfig: {
+      enabled: false, // Disable pre-join screen
+    },
 
-    // CRITICAL: Skip pre-join page - join directly!
-    'config.prejoinPageEnabled=false',
+    // Start settings
+    startWithAudioMuted: false,
+    startWithVideoMuted: !isVideoCall,
 
-    // Auto-start settings
-    'config.startWithAudioMuted=false',
-    `config.startWithVideoMuted=${!isVideoCall}`,
-
-    // UI customization - cleaner interface
-    'config.disableInviteFunctions=true',
-    'config.enableWelcomePage=false',
-    'config.hideConferenceSubject=true',
-    'config.hideConferenceTimer=false',
-
-    // Toolbar - show essential buttons only
-    'config.toolbarButtons=["microphone","camera","hangup","chat","tileview"]',
+    // UI customization
+    disableInviteFunctions: true,
+    enableWelcomePage: false,
+    hideConferenceSubject: true,
 
     // Mobile optimizations
-    'config.disableDeepLinking=true',
-    'config.enableClosePage=true', // Enable close page event
+    disableDeepLinking: true,
+    enableClosePage: true,
 
-    // Interface options
-    'interfaceConfig.SHOW_JITSI_WATERMARK=false',
-    'interfaceConfig.SHOW_WATERMARK_FOR_GUESTS=false',
-    'interfaceConfig.MOBILE_APP_PROMO=false',
-    'interfaceConfig.SHOW_CHROME_EXTENSION_BANNER=false',
+    // Auto-join settings
+    autoKnockLobby: false,
+    enableLobbyChat: false,
+  };
+
+  const interfaceConfig = {
+    SHOW_JITSI_WATERMARK: false,
+    SHOW_WATERMARK_FOR_GUESTS: false,
+    MOBILE_APP_PROMO: false,
+    SHOW_CHROME_EXTENSION_BANNER: false,
+    DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
+  };
+
+  // Build URL with config using proper Jitsi format
+  const configParams = [
+    // User info - this sets display name
+    `userInfo.displayName=${encodeURIComponent(displayName)}`,
+
+    // Config overwrite - the key to skipping pre-join!
+    `config.prejoinConfig.enabled=false`,
+    `config.startWithAudioMuted=false`,
+    `config.startWithVideoMuted=${!isVideoCall}`,
+    `config.disableInviteFunctions=true`,
+    `config.enableWelcomePage=false`,
+    `config.disableDeepLinking=true`,
+
+    // Interface config
+    `interfaceConfig.SHOW_JITSI_WATERMARK=false`,
+    `interfaceConfig.MOBILE_APP_PROMO=false`,
+    `interfaceConfig.SHOW_CHROME_EXTENSION_BANNER=false`,
   ];
 
-  // Join config params with &
   const configString = configParams.join('&');
 
-  // Return URL with hash fragment
+  // Return URL with hash config
   return `${baseUrl}#${configString}`;
 };
 

@@ -142,9 +142,59 @@ export default function ActiveCallScreen({ route, navigation }) {
     return mins.toString().padStart(2, '0') + ':' + secs.toString().padStart(2, '0');
   };
 
-  // Simplified injected JavaScript - just forward all Jitsi events
+  // Injected JavaScript to auto-join and forward events
   const injectedJavaScript = `
     (function() {
+      console.log('Jitsi auto-join script loaded');
+
+      // Function to auto-submit prejoin form if it appears
+      function autoJoinIfPrejoinExists() {
+        // Look for the prejoin screen
+        const joinButton = document.querySelector('[data-testid="prejoin.joinMeeting"]') ||
+                          document.querySelector('.prejoin-join-btn') ||
+                          document.querySelector('button[aria-label*="Join"]') ||
+                          Array.from(document.querySelectorAll('button')).find(btn =>
+                            btn.textContent.includes('Join') || btn.textContent.includes('join')
+                          );
+
+        if (joinButton) {
+          console.log('Found join button, clicking...');
+          joinButton.click();
+          return true;
+        }
+
+        // Also try to find and fill the name input if it exists
+        const nameInput = document.querySelector('[data-testid="prejoin.displayName"]') ||
+                         document.querySelector('input[placeholder*="name" i]') ||
+                         document.querySelector('input[type="text"]');
+
+        if (nameInput && nameInput.value === '') {
+          nameInput.value = '${displayName.replace(/'/g, "\\'")}';
+          console.log('Filled in name: ${displayName.replace(/'/g, "\\'")}');
+        }
+
+        return false;
+      }
+
+      // Try to auto-join immediately
+      setTimeout(() => {
+        autoJoinIfPrejoinExists();
+      }, 1000);
+
+      // Keep trying every 500ms for 10 seconds
+      let attempts = 0;
+      const maxAttempts = 20;
+      const interval = setInterval(() => {
+        attempts++;
+        const joined = autoJoinIfPrejoinExists();
+        if (joined || attempts >= maxAttempts) {
+          clearInterval(interval);
+          if (joined) {
+            console.log('Successfully auto-joined!');
+          }
+        }
+      }, 500);
+
       // Listen for Jitsi IFrame API events
       window.addEventListener('message', function(event) {
         try {
@@ -155,6 +205,8 @@ export default function ActiveCallScreen({ route, navigation }) {
           console.error('Error forwarding event:', error);
         }
       });
+
+      console.log('Auto-join listener ready');
     })();
     true;
   `;
