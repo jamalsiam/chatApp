@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   Dimensions,
   Image,
   StyleSheet,
@@ -9,6 +10,8 @@ import {
   Vibration
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { Camera } from 'expo-camera';
+import { Audio } from 'expo-av';
 import callService from '../services/callService';
 import userService from '../services/userService';
 
@@ -57,14 +60,48 @@ export default function IncomingCallScreen({ route, navigation }) {
 
   const handleAnswer = async () => {
     Vibration.cancel();
-    await callService.answerCall(callId);
 
-    navigation.replace('ActiveCall', {
-      callId,
-      callType,
-      isInitiator: false,
-      otherUser: caller
-    });
+    try {
+      console.log('Checking permissions before answering call...');
+
+      // Request permissions before answering
+      const audioStatus = await Audio.requestPermissionsAsync();
+
+      if (callType === 'video') {
+        const cameraStatus = await Camera.requestCameraPermissionsAsync();
+
+        if (audioStatus.status !== 'granted' || cameraStatus.status !== 'granted') {
+          Alert.alert(
+            'Permissions Required',
+            'Please grant camera and microphone permissions to answer video calls',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+      } else {
+        if (audioStatus.status !== 'granted') {
+          Alert.alert(
+            'Permission Required',
+            'Please grant microphone permission to answer calls',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+      }
+
+      console.log('Permissions granted, answering call...');
+      await callService.answerCall(callId);
+
+      navigation.replace('ActiveCall', {
+        callId,
+        callType,
+        isInitiator: false,
+        otherUser: caller
+      });
+    } catch (error) {
+      console.error('Error answering call:', error);
+      Alert.alert('Error', 'Failed to answer call. Please try again.');
+    }
   };
 
   const handleDecline = async () => {
