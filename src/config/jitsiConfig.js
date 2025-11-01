@@ -14,8 +14,8 @@
  */
 
 const JitsiConfig = {
-  // Jitsi Meet server URL (free public server)
-  serverUrl: 'https://meet.jit.si',
+  // Jitsi Meet server URL - Using 8x8.vc (no lobby restrictions!)
+  serverUrl: 'https://8x8.vc',
 
   // Room configuration
   defaultConfig: {
@@ -48,14 +48,11 @@ const JitsiConfig = {
  * @returns {string} - Jitsi Meet room URL
  */
 export const createJitsiUrl = (roomName, displayName = 'Guest', isVideoCall = true) => {
-  // Clean room name and add prefix to avoid lobby (public rooms)
+  // Clean room name (remove special characters)
   const cleanRoomName = roomName.replace(/[^a-zA-Z0-9-_]/g, '');
 
-  // Add random prefix to make room unique and avoid lobby
-  const uniqueRoomName = `vpaas-magic-cookie-${cleanRoomName}`;
-
-  // Base URL
-  const baseUrl = `${JitsiConfig.serverUrl}/${uniqueRoomName}`;
+  // Base URL - 8x8.vc doesn't need special prefixes!
+  const baseUrl = `${JitsiConfig.serverUrl}/${cleanRoomName}`;
 
   // Configuration parameters - DISABLE ALL LOBBY/AUTH FEATURES
   const configParams = [
