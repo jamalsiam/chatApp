@@ -29,6 +29,9 @@ import BlockedUsersScreen from './src/screens/BlockedUsersScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import SearchUsersScreen from './src/screens/SearchUsersScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import IncomingCallScreen from './src/screens/IncomingCallScreen';
+import OutgoingCallScreen from './src/screens/OutgoingCallScreen';
+import ActiveCallScreen from './src/screens/ActiveCallScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -264,6 +267,9 @@ export default function App() {
             <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} />
             <Stack.Screen name="CreateGroup" component={CreateGroupScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="IncomingCall" component={IncomingCallScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="OutgoingCall" component={OutgoingCallScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="ActiveCall" component={ActiveCallScreen} options={{ headerShown: false }} />
           </>
         )}
       </Stack.Navigator>
