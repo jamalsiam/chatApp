@@ -90,7 +90,13 @@ export default function ActiveCallScreen({ route, navigation }) {
     clearInterval(durationInterval.current);
     sendToWebView('endCall', {});
     await callService.endCall(callId, duration);
-    navigation.goBack();
+
+    // Check if we can go back, otherwise navigate to Home
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Home');
+    }
   };
 
   const toggleMute = () => { sendToWebView('toggleMicrophone', {}); };

@@ -31,7 +31,12 @@ export default function IncomingCallScreen({ route, navigation }) {
 
       if (callData.status === 'ended' || callData.status === 'declined') {
         Vibration.cancel();
-        navigation.goBack();
+        // Check if we can go back, otherwise navigate to Home
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate('Home');
+        }
       }
     });
 
@@ -65,7 +70,12 @@ export default function IncomingCallScreen({ route, navigation }) {
   const handleDecline = async () => {
     Vibration.cancel();
     await callService.declineCall(callId);
-    navigation.goBack();
+    // Check if we can go back, otherwise navigate to Home
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Home');
+    }
   };
 
   const getCallTypeText = () => {

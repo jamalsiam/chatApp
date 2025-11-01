@@ -19,14 +19,24 @@ export default function OutgoingCallScreen({ route, navigation }) {
           otherUser: receiver
         });
       } else if (callData.status === 'declined' || callData.status === 'ended') {
-        navigation.goBack();
+        // Check if we can go back, otherwise navigate to Home
+        if (navigation.canGoBack()) {
+          navigation.goBack();
+        } else {
+          navigation.navigate('Home');
+        }
       }
     });
 
     // Auto-cancel after 30 seconds
     const timeout = setTimeout(() => {
       callService.markAsMissed(callId);
-      navigation.goBack();
+      // Check if we can go back, otherwise navigate to Home
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Home');
+      }
     }, 30000);
 
     return () => {
@@ -37,7 +47,12 @@ export default function OutgoingCallScreen({ route, navigation }) {
 
   const handleCancel = async () => {
     await callService.endCall(callId);
-    navigation.goBack();
+    // Check if we can go back, otherwise navigate to Home
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Home');
+    }
   };
 
   return (
