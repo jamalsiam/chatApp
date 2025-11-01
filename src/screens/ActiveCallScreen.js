@@ -1,87 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Icon from 'react-native-vector-icons/Ionicons';
-import { Camera } from 'expo-camera';
-import { Audio } from 'expo-av';
+import { Alert, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { WebView } from 'react-native-webview';
 import callService from '../services/callService';
-import AgoraVideoCall from '../components/AgoraVideoCall';
+import { createRoomUrl } from '../config/wherebyConfig';
 
 export default function ActiveCallScreen({ route, navigation }) {
   const { callId, callType, isInitiator, otherUser } = route.params;
   const [duration, setDuration] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(false);
-  const [permissionsGranted, setPermissionsGranted] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [agoraCommand, setAgoraCommand] = useState(null);
-  const [userJoined, setUserJoined] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const durationInterval = useRef(null);
+  const webViewRef = useRef(null);
 
-  // Use callId as Agora channel name
-  const channelName = callId;
+  // Generate Whereby room URL
+  const displayName = otherUser?.displayName || 'User';
+  const isVideoCall = callType === 'video';
+  const roomUrl = createRoomUrl(callId, displayName, isVideoCall);
 
-  // Request permissions on mount
+  // Start duration timer and listen for call status
   useEffect(() => {
-    requestPermissions();
-  }, []);
-
-  const requestPermissions = async () => {
-    try {
-      console.log('Requesting camera and microphone permissions...');
-
-      // Request audio permission
-      const audioStatus = await Audio.requestPermissionsAsync();
-      console.log('Audio permission status:', audioStatus.status);
-
-      // Request camera permission if video call
-      if (callType === 'video') {
-        const cameraStatus = await Camera.requestCameraPermissionsAsync();
-        console.log('Camera permission status:', cameraStatus.status);
-
-        if (audioStatus.status !== 'granted' || cameraStatus.status !== 'granted') {
-          setErrorMessage('Camera and microphone permissions are required for calls');
-          Alert.alert(
-            'Permissions Required',
-            'Please grant camera and microphone permissions to make video calls',
-            [
-              {
-                text: 'OK',
-                onPress: () => handleEndCall()
-              }
-            ]
-          );
-          return;
-        }
-      } else {
-        // Audio only call
-        if (audioStatus.status !== 'granted') {
-          setErrorMessage('Microphone permission is required for calls');
-          Alert.alert(
-            'Permission Required',
-            'Please grant microphone permission to make voice calls',
-            [
-              {
-                text: 'OK',
-                onPress: () => handleEndCall()
-              }
-            ]
-          );
-          return;
-        }
-      }
-
-      console.log('All permissions granted');
-      setPermissionsGranted(true);
-    } catch (error) {
-      console.error('Error requesting permissions:', error);
-      setErrorMessage('Failed to request permissions: ' + error.message);
-      Alert.alert('Permission Error', 'Could not request permissions. Please try again.');
-    }
-  };
-
-  // Start duration timer
-  useEffect(() => {
-    if (!permissionsGranted) return;
+    console.log('Starting call with Whereby URL:', roomUrl);
 
     durationInterval.current = setInterval(() => {
       setDuration(prev => prev + 1);
@@ -97,38 +34,7 @@ export default function ActiveCallScreen({ route, navigation }) {
       clearInterval(durationInterval.current);
       unsubscribe();
     };
-  }, [permissionsGranted]);
-
-  // Agora event handlers
-  const handleUserJoined = (uid) => {
-    console.log('User joined:', uid);
-    setUserJoined(true);
-  };
-
-  const handleUserLeft = (uid) => {
-    console.log('User left:', uid);
-    setUserJoined(false);
-  };
-
-  const handleAgoraError = (error) => {
-    console.error('Agora error:', error);
-    setErrorMessage(error.message || 'Call error');
-
-    if (error.message && error.message.includes('App ID')) {
-      Alert.alert(
-        'Configuration Error',
-        'Please configure your Agora App ID in src/config/agoraConfig.js\n\nGet your free App ID from: https://console.agora.io/',
-        [{ text: 'OK', onPress: () => handleEndCall() }]
-      );
-    } else {
-      Alert.alert('Call Error', error.message || 'An error occurred during the call');
-    }
-  };
-
-  const handleConnectionStateChange = (state, reason) => {
-    console.log('Connection state:', state, 'Reason:', reason);
-    // You can add connection quality indicators here
-  };
+  }, []);
 
   const handleEndCall = async () => {
     clearInterval(durationInterval.current);
@@ -142,18 +48,29 @@ export default function ActiveCallScreen({ route, navigation }) {
     }
   };
 
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
-    setAgoraCommand({ type: 'toggleMicrophone', timestamp: Date.now() });
+  const handleWebViewMessage = (event) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      console.log('WebView message:', data);
+
+      // Handle Whereby events
+      if (data.type === 'app.room_left') {
+        // User left the room
+        handleEndCall();
+      }
+    } catch (error) {
+      console.log('WebView message (non-JSON):', event.nativeEvent.data);
+    }
   };
 
-  const toggleCamera = () => {
-    setIsCameraOff(!isCameraOff);
-    setAgoraCommand({ type: 'toggleCamera', timestamp: Date.now() });
-  };
-
-  const switchCamera = () => {
-    setAgoraCommand({ type: 'switchCamera', timestamp: Date.now() });
+  const handleWebViewError = (syntheticEvent) => {
+    const { nativeEvent } = syntheticEvent;
+    console.error('WebView error:', nativeEvent);
+    Alert.alert(
+      'Connection Error',
+      'Failed to load video call. Please check your internet connection.',
+      [{ text: 'OK', onPress: () => handleEndCall() }]
+    );
   };
 
   const formatDuration = (seconds) => {
@@ -164,89 +81,65 @@ export default function ActiveCallScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      {!permissionsGranted ? (
-        <View style={styles.loadingContainer}>
-          <Icon name="lock-closed" size={60} color="#888" />
-          <Text style={styles.loadingText}>Requesting permissions...</Text>
-          {errorMessage ? (
-            <Text style={styles.errorText}>{errorMessage}</Text>
-          ) : null}
-        </View>
-      ) : (
-        <>
-          <AgoraVideoCall
-            channelName={channelName}
-            uid={0}
-            isHost={true}
-            callType={callType}
-            onUserJoined={handleUserJoined}
-            onUserLeft={handleUserLeft}
-            onError={handleAgoraError}
-            onConnectionStateChange={handleConnectionStateChange}
-            commands={agoraCommand}
-          />
-
-          <View style={styles.topOverlay}>
-            <View style={styles.topCenter}>
-              <Text style={styles.userName}>{otherUser?.displayName || 'Unknown'}</Text>
-              <Text style={styles.duration}>{formatDuration(duration)}</Text>
-              {!userJoined && (
-                <Text style={styles.statusText}>Calling...</Text>
-              )}
-            </View>
+      <WebView
+        ref={webViewRef}
+        source={{ uri: roomUrl }}
+        style={styles.webview}
+        mediaPlaybackRequiresUserAction={false}
+        mediaCapturePermissionGrantType="grant"
+        allowsInlineMediaPlayback={true}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        startInLoadingState={true}
+        onMessage={handleWebViewMessage}
+        onError={handleWebViewError}
+        onLoadEnd={() => setIsLoading(false)}
+        renderLoading={() => (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#6C5CE7" />
+            <Text style={styles.loadingText}>Loading video call...</Text>
+            <Text style={styles.roomText}>Room: {callId}</Text>
           </View>
+        )}
+      />
 
-          <View style={styles.controlsOverlay}>
-            {callType === 'video' && (
-              <>
-                <TouchableOpacity
-                  style={[styles.controlButton, isCameraOff && styles.controlButtonActive]}
-                  onPress={toggleCamera}
-                >
-                  <Icon name={isCameraOff ? 'videocam-off' : 'videocam'} size={28} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.controlButton} onPress={switchCamera}>
-                  <Icon name="camera-reverse" size={28} color="#fff" />
-                </TouchableOpacity>
-              </>
-            )}
-
-            <TouchableOpacity
-              style={[styles.controlButton, isMuted && styles.controlButtonActive]}
-              onPress={toggleMute}
-            >
-              <Icon name={isMuted ? 'mic-off' : 'mic'} size={28} color="#fff" />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.controlButton, styles.endButton]} onPress={handleEndCall}>
-              <Icon name="call" size={32} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
+      {/* Top info overlay */}
+      <View style={styles.topOverlay}>
+        <Text style={styles.userName}>{otherUser?.displayName || 'Unknown'}</Text>
+        <Text style={styles.duration}>{formatDuration(duration)}</Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  loadingContainer: {
+  container: {
     flex: 1,
+    backgroundColor: '#000',
+  },
+  webview: {
+    flex: 1,
+  },
+  loadingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#000',
+    zIndex: 5,
   },
   loadingText: {
     fontSize: 18,
     color: '#fff',
     marginTop: 20,
   },
-  errorText: {
+  roomText: {
     fontSize: 14,
-    color: '#FF4757',
+    color: '#888',
     marginTop: 10,
-    textAlign: 'center',
-    paddingHorizontal: 40,
   },
   topOverlay: {
     position: 'absolute',
@@ -254,36 +147,19 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingVertical: 15,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingVertical: 10,
     paddingHorizontal: 20,
     zIndex: 10,
   },
-  topCenter: { alignItems: 'center' },
-  userName: { fontSize: 20, fontWeight: 'bold', color: '#fff', marginBottom: 5 },
-  duration: { fontSize: 16, color: '#ddd' },
-  statusText: { fontSize: 14, color: '#FFD700', marginTop: 5 },
-  controlsOverlay: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 20,
-    paddingHorizontal: 20,
-    zIndex: 10,
+  userName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 5,
   },
-  controlButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  duration: {
+    fontSize: 14,
+    color: '#ddd',
   },
-  controlButtonActive: {
-    backgroundColor: 'rgba(255, 71, 87, 0.7)',
-  },
-  endButton: { backgroundColor: '#FF4757', width: 70, height: 70, borderRadius: 35 },
 });
