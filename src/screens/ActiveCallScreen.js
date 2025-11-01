@@ -11,6 +11,8 @@ export default function ActiveCallScreen({ route, navigation }) {
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [webViewReady, setWebViewReady] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [callQuality, setCallQuality] = useState('good');
   const durationInterval = useRef(null);
 
   useEffect(() => {
@@ -80,6 +82,15 @@ export default function ActiveCallScreen({ route, navigation }) {
         case 'cameraToggled':
           setIsCameraOff(!message.data.enabled);
           break;
+        case 'screenSharingStarted':
+          setIsScreenSharing(true);
+          break;
+        case 'screenSharingStopped':
+          setIsScreenSharing(false);
+          break;
+        case 'callQuality':
+          setCallQuality(message.data.quality);
+          break;
       }
     } catch (error) {
       console.error('Error handling WebView message:', error);
@@ -102,6 +113,31 @@ export default function ActiveCallScreen({ route, navigation }) {
   const toggleMute = () => { sendToWebView('toggleMicrophone', {}); };
   const toggleCamera = () => { sendToWebView('toggleCamera', {}); };
   const switchCamera = () => { sendToWebView('switchCamera', {}); };
+  const toggleScreenSharing = () => {
+    if (isScreenSharing) {
+      sendToWebView('stopScreenSharing', {});
+    } else {
+      sendToWebView('startScreenSharing', {});
+    }
+  };
+
+  const getQualityColor = () => {
+    switch (callQuality) {
+      case 'good': return '#00D856';
+      case 'fair': return '#FFD700';
+      case 'poor': return '#FF4757';
+      default: return '#00D856';
+    }
+  };
+
+  const getQualityIcon = () => {
+    switch (callQuality) {
+      case 'good': return 'wifi';
+      case 'fair': return 'wifi-outline';
+      case 'poor': return 'warning';
+      default: return 'wifi';
+    }
+  };
 
   const formatDuration = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -128,8 +164,21 @@ export default function ActiveCallScreen({ route, navigation }) {
       />
 
       <View style={styles.topOverlay}>
-        <Text style={styles.userName}>{otherUser?.displayName || 'Unknown'}</Text>
-        <Text style={styles.duration}>{formatDuration(duration)}</Text>
+        <View style={styles.topLeft}>
+          <Icon
+            name={getQualityIcon()}
+            size={16}
+            color={getQualityColor()}
+            style={styles.qualityIcon}
+          />
+          <Text style={[styles.qualityText, { color: getQualityColor() }]}>
+            {callQuality}
+          </Text>
+        </View>
+        <View style={styles.topCenter}>
+          <Text style={styles.userName}>{otherUser?.displayName || 'Unknown'}</Text>
+          <Text style={styles.duration}>{formatDuration(duration)}</Text>
+        </View>
       </View>
 
       <View style={styles.controlsOverlay}>
@@ -140,6 +189,12 @@ export default function ActiveCallScreen({ route, navigation }) {
             </TouchableOpacity>
             <TouchableOpacity style={styles.controlButton} onPress={switchCamera}>
               <Icon name="camera-reverse" size={28} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.controlButton, isScreenSharing && styles.activeButton]}
+              onPress={toggleScreenSharing}
+            >
+              <Icon name={isScreenSharing ? 'desktop' : 'desktop-outline'} size={28} color="#fff" />
             </TouchableOpacity>
           </>
         )}
@@ -159,10 +214,15 @@ export default function ActiveCallScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   webview: { flex: 1 },
-  topOverlay: { position: 'absolute', top: 50, left: 0, right: 0, alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingVertical: 15 },
+  topOverlay: { position: 'absolute', top: 50, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(0,0,0,0.5)', paddingVertical: 15, paddingHorizontal: 20 },
+  topLeft: { flexDirection: 'row', alignItems: 'center' },
+  topCenter: { alignItems: 'center', flex: 1 },
+  qualityIcon: { marginRight: 6 },
+  qualityText: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
   userName: { fontSize: 20, fontWeight: 'bold', color: '#fff', marginBottom: 5 },
   duration: { fontSize: 16, color: '#ddd' },
   controlsOverlay: { position: 'absolute', bottom: 40, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 20, paddingHorizontal: 20 },
   controlButton: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.3)', justifyContent: 'center', alignItems: 'center' },
+  activeButton: { backgroundColor: '#6C5CE7' },
   endButton: { backgroundColor: '#FF4757', width: 70, height: 70, borderRadius: 35 }
 });

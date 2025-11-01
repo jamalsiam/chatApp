@@ -74,12 +74,29 @@
     </div>
 
     <script>
-        // WebRTC configuration
-        const configuration = {
+        // Default WebRTC configuration with free TURN servers
+        let configuration = {
             iceServers: [
+                // STUN servers
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
+                { urls: 'stun:stun2.l.google.com:19302' },
+                // Free TURN servers (Metered.ca - limited quota)
+                {
+                    urls: 'turn:a.relay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:a.relay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:a.relay.metered.ca:443?transport=tcp',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
             ]
         };
 
@@ -88,6 +105,9 @@
         let remoteStream = null;
         let callType = 'video'; // 'video' or 'audio'
         let isInitiator = false;
+        let isScreenSharing = false;
+        let originalVideoTrack = null;
+        let statsInterval = null;
 
         const localVideo = document.getElementById('localVideo');
         const remoteVideo = document.getElementById('remoteVideo');
@@ -105,11 +125,24 @@
             statusDiv.className = className;
         }
 
+        // Update TURN configuration
+        function updateConfiguration(newConfig) {
+            if (newConfig && newConfig.iceServers) {
+                configuration = newConfig;
+                console.log('Configuration updated:', configuration);
+            }
+        }
+
         // Initialize call
         async function initializeCall(options) {
             try {
                 callType = options.callType || 'video';
                 isInitiator = options.isInitiator || false;
+
+                // Update configuration if provided
+                if (options.configuration) {
+                    updateConfiguration(options.configuration);
+                }
 
                 updateStatus('Getting media devices...', 'connecting');
 
@@ -165,8 +198,11 @@
 
                     if (state === 'connected') {
                         updateStatus('Connected', 'connected');
+                        // Start call quality monitoring
+                        startQualityMonitoring();
                     } else if (state === 'failed' || state === 'disconnected') {
                         updateStatus('Connection lost', 'error');
+                        stopQualityMonitoring();
                         sendMessageToRN('connectionError', { state });
                     }
                 };
@@ -282,8 +318,126 @@
             }
         }
 
+        // Start screen sharing
+        async function startScreenSharing() {
+            try {
+                if (!peerConnection || isScreenSharing) return;
+
+                // Get screen capture stream
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        cursor: 'always'
+                    },
+                    audio: false
+                });
+
+                const screenTrack = screenStream.getVideoTracks()[0];
+
+                // Store original video track
+                if (localStream) {
+                    originalVideoTrack = localStream.getVideoTracks()[0];
+                }
+
+                // Replace video track with screen track
+                const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) {
+                    await sender.replaceTrack(screenTrack);
+                }
+
+                // Update local video
+                localVideo.srcObject = screenStream;
+                isScreenSharing = true;
+
+                // Handle screen share ended
+                screenTrack.onended = () => {
+                    stopScreenSharing();
+                };
+
+                sendMessageToRN('screenSharingStarted', { success: true });
+            } catch (error) {
+                console.error('Error starting screen share:', error);
+                sendMessageToRN('error', { message: 'Failed to start screen sharing' });
+            }
+        }
+
+        // Stop screen sharing
+        async function stopScreenSharing() {
+            try {
+                if (!isScreenSharing || !originalVideoTrack) return;
+
+                // Replace screen track with original video track
+                const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) {
+                    await sender.replaceTrack(originalVideoTrack);
+                }
+
+                // Restore local video
+                localVideo.srcObject = localStream;
+                isScreenSharing = false;
+
+                sendMessageToRN('screenSharingStopped', { success: true });
+            } catch (error) {
+                console.error('Error stopping screen share:', error);
+            }
+        }
+
+        // Call quality monitoring
+        function startQualityMonitoring() {
+            if (statsInterval) return;
+
+            statsInterval = setInterval(async () => {
+                if (!peerConnection) return;
+
+                try {
+                    const stats = await peerConnection.getStats(null);
+                    const qualityData = parseStats(stats);
+                    sendMessageToRN('callQuality', qualityData);
+                } catch (error) {
+                    console.error('Error getting stats:', error);
+                }
+            }, 2000); // Update every 2 seconds
+        }
+
+        function stopQualityMonitoring() {
+            if (statsInterval) {
+                clearInterval(statsInterval);
+                statsInterval = null;
+            }
+        }
+
+        function parseStats(stats) {
+            let qualityData = {
+                bitrate: 0,
+                packetsLost: 0,
+                jitter: 0,
+                roundTripTime: 0,
+                quality: 'good' // good, fair, poor
+            };
+
+            stats.forEach(report => {
+                if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                    qualityData.packetsLost = report.packetsLost || 0;
+                    qualityData.jitter = report.jitter || 0;
+                    qualityData.bitrate = report.bytesReceived || 0;
+                } else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                    qualityData.roundTripTime = report.currentRoundTripTime || 0;
+                }
+            });
+
+            // Determine quality level
+            if (qualityData.packetsLost > 50 || qualityData.roundTripTime > 0.3) {
+                qualityData.quality = 'poor';
+            } else if (qualityData.packetsLost > 20 || qualityData.roundTripTime > 0.15) {
+                qualityData.quality = 'fair';
+            }
+
+            return qualityData;
+        }
+
         // End call
         function endCall() {
+            stopQualityMonitoring();
+
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
@@ -319,6 +473,15 @@
                         break;
                     case 'switchCamera':
                         switchCamera();
+                        break;
+                    case 'startScreenSharing':
+                        startScreenSharing();
+                        break;
+                    case 'stopScreenSharing':
+                        stopScreenSharing();
+                        break;
+                    case 'updateConfiguration':
+                        updateConfiguration(message.data);
                         break;
                     case 'endCall':
                         endCall();

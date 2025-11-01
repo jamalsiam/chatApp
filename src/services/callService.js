@@ -11,6 +11,7 @@ import {
   where
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import notificationService from './NotificationService';
 
 class CallService {
   // Initialize a call (create call document)
@@ -33,7 +34,17 @@ class CallService {
       };
 
       const callRef = await addDoc(collection(db, 'calls'), callData);
-      return { success: true, callId: callRef.id };
+      const callId = callRef.id;
+
+      // Send push notification to receiver
+      await notificationService.sendCallNotification(
+        callerId,
+        receiverId,
+        callType,
+        callId
+      );
+
+      return { success: true, callId };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -82,6 +93,19 @@ class CallService {
   // Mark call as missed
   async markAsMissed(callId) {
     try {
+      // Get call details to send notification
+      const callDoc = await getDoc(doc(db, 'calls', callId));
+      if (callDoc.exists()) {
+        const callData = callDoc.data();
+
+        // Send missed call notification
+        await notificationService.sendMissedCallNotification(
+          callData.callerId,
+          callData.receiverId,
+          callData.callType
+        );
+      }
+
       await updateDoc(doc(db, 'calls', callId), {
         status: 'missed',
         endTime: serverTimestamp()
@@ -227,6 +251,106 @@ class CallService {
     } catch (error) {
       console.error('Error getting call details:', error);
       return null;
+    }
+  }
+
+  // Create a group call
+  async initiateGroupCall(callerId, participantIds, callType = 'video') {
+    try {
+      const callData = {
+        callerId,
+        callType,
+        isGroupCall: true,
+        participants: participantIds.map(id => ({
+          id,
+          status: 'ringing', // ringing, active, declined, missed
+          joinedAt: null
+        })),
+        status: 'ringing',
+        startTime: serverTimestamp(),
+        endTime: null,
+        duration: 0
+      };
+
+      const callRef = await addDoc(collection(db, 'calls'), callData);
+      const callId = callRef.id;
+
+      // Send notifications to all participants
+      for (const participantId of participantIds) {
+        if (participantId !== callerId) {
+          await notificationService.sendCallNotification(
+            callerId,
+            participantId,
+            callType,
+            callId
+          );
+        }
+      }
+
+      return { success: true, callId };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Join a group call
+  async joinGroupCall(callId, userId) {
+    try {
+      const callDoc = await getDoc(doc(db, 'calls', callId));
+      if (!callDoc.exists()) {
+        return { success: false, error: 'Call not found' };
+      }
+
+      const callData = callDoc.data();
+      const participants = callData.participants || [];
+
+      // Update participant status
+      const updatedParticipants = participants.map(p =>
+        p.id === userId
+          ? { ...p, status: 'active', joinedAt: serverTimestamp() }
+          : p
+      );
+
+      await updateDoc(doc(db, 'calls', callId), {
+        participants: updatedParticipants
+      });
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Leave a group call
+  async leaveGroupCall(callId, userId) {
+    try {
+      const callDoc = await getDoc(doc(db, 'calls', callId));
+      if (!callDoc.exists()) {
+        return { success: false };
+      }
+
+      const callData = callDoc.data();
+      const participants = callData.participants || [];
+
+      // Remove participant
+      const updatedParticipants = participants.filter(p => p.id !== userId);
+
+      // If no participants left, end the call
+      if (updatedParticipants.length === 0) {
+        await updateDoc(doc(db, 'calls', callId), {
+          status: 'ended',
+          endTime: serverTimestamp(),
+          participants: updatedParticipants
+        });
+      } else {
+        await updateDoc(doc(db, 'calls', callId), {
+          participants: updatedParticipants
+        });
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
     }
   }
 }

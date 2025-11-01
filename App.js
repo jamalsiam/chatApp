@@ -34,6 +34,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import IncomingCallScreen from './src/screens/IncomingCallScreen';
 import OutgoingCallScreen from './src/screens/OutgoingCallScreen';
 import ActiveCallScreen from './src/screens/ActiveCallScreen';
+import GroupCallScreen from './src/screens/GroupCallScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -298,6 +299,7 @@ export default function App() {
             <Stack.Screen name="IncomingCall" component={IncomingCallScreen} options={{ headerShown: false }} />
             <Stack.Screen name="OutgoingCall" component={OutgoingCallScreen} options={{ headerShown: false }} />
             <Stack.Screen name="ActiveCall" component={ActiveCallScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="GroupCall" component={GroupCallScreen} options={{ headerShown: false }} />
           </>
         )}
       </Stack.Navigator>

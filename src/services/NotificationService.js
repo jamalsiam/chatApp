@@ -470,6 +470,79 @@ class NotificationService {
     }
   }
 
+  // Send incoming call notification
+  async sendCallNotification(callerId, receiverId, callType, callId) {
+    try {
+      // Get receiver's push token
+      const receiverDoc = await getDoc(doc(db, 'users', receiverId));
+      if (!receiverDoc.exists()) return { success: false };
+
+      const pushToken = receiverDoc.data().pushToken;
+      if (!pushToken) return { success: false };
+
+      // Get caller info
+      const callerDoc = await getDoc(doc(db, 'users', callerId));
+      if (!callerDoc.exists()) return { success: false };
+
+      const callerName = callerDoc.data().displayName || 'Someone';
+
+      // Send high-priority notification for incoming call
+      const message = {
+        to: pushToken,
+        sound: 'default',
+        title: `Incoming ${callType === 'video' ? 'Video' : 'Audio'} Call`,
+        body: `${callerName} is calling you...`,
+        data: {
+          type: 'call',
+          callId: callId,
+          callerId: callerId,
+          callType: callType
+        },
+        badge: 1,
+        priority: 'high',
+        channelId: 'calls', // Android channel for calls
+      };
+
+      const response = await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Accept-encoding': 'gzip, deflate',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(message),
+      });
+
+      const result = await response.json();
+      return { success: true, result };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Send missed call notification
+  async sendMissedCallNotification(callerId, receiverId, callType) {
+    try {
+      const callerDoc = await getDoc(doc(db, 'users', callerId));
+      if (!callerDoc.exists()) return;
+
+      const callerName = callerDoc.data().displayName || 'Someone';
+
+      await this.sendNotificationToUser(
+        receiverId,
+        'Missed Call',
+        `You missed a ${callType === 'video' ? 'video' : 'audio'} call from ${callerName}`,
+        {
+          type: 'missedCall',
+          callerId: callerId,
+          callType: callType
+        }
+      );
+    } catch (error) {
+      console.error('Error sending missed call notification:', error);
+    }
+  }
+
   // Clean up listeners
   removeListeners() {
     if (this.notificationListener) {
