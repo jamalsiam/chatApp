@@ -149,13 +149,14 @@ export default function ActiveCallScreen({ route, navigation }) {
 
       // Function to auto-submit prejoin form if it appears
       function autoJoinIfPrejoinExists() {
-        // Look for the prejoin screen
+        // Look for the prejoin screen join button
         const joinButton = document.querySelector('[data-testid="prejoin.joinMeeting"]') ||
                           document.querySelector('.prejoin-join-btn') ||
                           document.querySelector('button[aria-label*="Join"]') ||
-                          Array.from(document.querySelectorAll('button')).find(btn =>
-                            btn.textContent.includes('Join') || btn.textContent.includes('join')
-                          );
+                          Array.from(document.querySelectorAll('button')).find(btn => {
+                            const text = btn.textContent.toLowerCase();
+                            return text.includes('join') && !text.includes('audio') && !text.includes('video');
+                          });
 
         if (joinButton) {
           console.log('Found join button, clicking...');
@@ -163,8 +164,23 @@ export default function ActiveCallScreen({ route, navigation }) {
           return true;
         }
 
-        // Also try to find and fill the name input if it exists
+        // Look for lobby "Ask to join" or "Join" button
+        const askToJoinButton = document.querySelector('[data-testid="lobby.knockButton"]') ||
+                               document.querySelector('button[aria-label*="Ask to join"]') ||
+                               Array.from(document.querySelectorAll('button')).find(btn =>
+                                 btn.textContent.includes('Ask to join') ||
+                                 btn.textContent.includes('Join meeting')
+                               );
+
+        if (askToJoinButton) {
+          console.log('Found ask-to-join button, clicking...');
+          askToJoinButton.click();
+          return true;
+        }
+
+        // Try to find and fill the name input if it exists
         const nameInput = document.querySelector('[data-testid="prejoin.displayName"]') ||
+                         document.querySelector('[data-testid="lobby.nameField"]') ||
                          document.querySelector('input[placeholder*="name" i]') ||
                          document.querySelector('input[type="text"]');
 
@@ -181,9 +197,9 @@ export default function ActiveCallScreen({ route, navigation }) {
         autoJoinIfPrejoinExists();
       }, 1000);
 
-      // Keep trying every 500ms for 10 seconds
+      // Keep trying every 500ms for 15 seconds
       let attempts = 0;
-      const maxAttempts = 20;
+      const maxAttempts = 30;
       const interval = setInterval(() => {
         attempts++;
         const joined = autoJoinIfPrejoinExists();

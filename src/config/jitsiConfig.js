@@ -48,62 +48,48 @@ const JitsiConfig = {
  * @returns {string} - Jitsi Meet room URL
  */
 export const createJitsiUrl = (roomName, displayName = 'Guest', isVideoCall = true) => {
-  // Clean room name (remove special characters)
+  // Clean room name and add prefix to avoid lobby (public rooms)
   const cleanRoomName = roomName.replace(/[^a-zA-Z0-9-_]/g, '');
 
-  // Base URL with displayName as URL parameter (this sets the name automatically)
-  const baseUrl = `${JitsiConfig.serverUrl}/${cleanRoomName}`;
+  // Add random prefix to make room unique and avoid lobby
+  const uniqueRoomName = `vpaas-magic-cookie-${cleanRoomName}`;
 
-  // Build config object - using proper configOverwrite format
-  const config = {
-    // CRITICAL: Skip pre-join page completely
-    prejoinConfig: {
-      enabled: false, // Disable pre-join screen
-    },
+  // Base URL
+  const baseUrl = `${JitsiConfig.serverUrl}/${uniqueRoomName}`;
 
-    // Start settings
-    startWithAudioMuted: false,
-    startWithVideoMuted: !isVideoCall,
-
-    // UI customization
-    disableInviteFunctions: true,
-    enableWelcomePage: false,
-    hideConferenceSubject: true,
-
-    // Mobile optimizations
-    disableDeepLinking: true,
-    enableClosePage: true,
-
-    // Auto-join settings
-    autoKnockLobby: false,
-    enableLobbyChat: false,
-  };
-
-  const interfaceConfig = {
-    SHOW_JITSI_WATERMARK: false,
-    SHOW_WATERMARK_FOR_GUESTS: false,
-    MOBILE_APP_PROMO: false,
-    SHOW_CHROME_EXTENSION_BANNER: false,
-    DISABLE_JOIN_LEAVE_NOTIFICATIONS: true,
-  };
-
-  // Build URL with config using proper Jitsi format
+  // Configuration parameters - DISABLE ALL LOBBY/AUTH FEATURES
   const configParams = [
-    // User info - this sets display name
+    // User info
     `userInfo.displayName=${encodeURIComponent(displayName)}`,
 
-    // Config overwrite - the key to skipping pre-join!
-    `config.prejoinConfig.enabled=false`,
-    `config.startWithAudioMuted=false`,
+    // CRITICAL: Disable pre-join and lobby
+    'config.prejoinConfig.enabled=false',
+    'config.enableLobbyChat=false',
+    'config.disableLobbyPassword=true',
+
+    // Security/Auth - disable to avoid waiting room
+    'config.enableInsecureRoomNameWarning=false',
+    'config.disableModeratorIndicator=true',
+    'config.requireDisplayName=false',
+
+    // Auto-join settings
+    'config.autoKnockLobby=false',
+    'config.enableWelcomePage=false',
+
+    // Start settings
+    'config.startWithAudioMuted=false',
     `config.startWithVideoMuted=${!isVideoCall}`,
-    `config.disableInviteFunctions=true`,
-    `config.enableWelcomePage=false`,
-    `config.disableDeepLinking=true`,
+
+    // UI customization
+    'config.disableInviteFunctions=true',
+    'config.hideConferenceSubject=true',
+    'config.disableDeepLinking=true',
 
     // Interface config
-    `interfaceConfig.SHOW_JITSI_WATERMARK=false`,
-    `interfaceConfig.MOBILE_APP_PROMO=false`,
-    `interfaceConfig.SHOW_CHROME_EXTENSION_BANNER=false`,
+    'interfaceConfig.SHOW_JITSI_WATERMARK=false',
+    'interfaceConfig.MOBILE_APP_PROMO=false',
+    'interfaceConfig.SHOW_CHROME_EXTENSION_BANNER=false',
+    'interfaceConfig.DISABLE_JOIN_LEAVE_NOTIFICATIONS=true',
   ];
 
   const configString = configParams.join('&');
