@@ -114,28 +114,63 @@ export default function ChatListScreen({ navigation }) {
     );
   };
 
+  const handleMuteChat = async (item) => {
+    const otherUserId = item.otherUser?.id;
+    if (!otherUserId || item.isGroup) return;
+
+    const isMuted = mutedUsers.includes(otherUserId);
+    const displayName = item.otherUser?.displayName;
+
+    if (isMuted) {
+      // Unmute
+      const result = await require('../services/userService').default.unmuteUser(currentUser.uid, otherUserId);
+      if (result.success) {
+        setMutedUsers(prev => prev.filter(id => id !== otherUserId));
+        Alert.alert('Unmuted', `${displayName} has been unmuted`);
+      }
+    } else {
+      // Mute
+      const result = await require('../services/userService').default.muteUser(currentUser.uid, otherUserId);
+      if (result.success) {
+        setMutedUsers(prev => [...prev, otherUserId]);
+        Alert.alert('Muted', `${displayName} has been muted`);
+      }
+    }
+  };
+
   const handleLongPress = (item) => {
     const displayName = item.isGroup ? item.groupName : item.otherUser?.displayName;
     const isGroup = item.isGroup;
+    const otherUserId = item.otherUser?.id;
+    const isMuted = !isGroup && otherUserId && mutedUsers.includes(otherUserId);
 
-    const options = isGroup
-      ? ['Delete Chat', 'Cancel']
-      : ['Delete Chat', 'Cancel'];
+    const buttons = [];
+
+    // Mute/Unmute option (only for one-on-one chats)
+    if (!isGroup) {
+      buttons.push({
+        text: isMuted ? 'Unmute' : 'Mute',
+        onPress: () => handleMuteChat(item)
+      });
+    }
+
+    // Delete option
+    buttons.push({
+      text: 'Delete Chat',
+      style: 'destructive',
+      onPress: () => handleDeleteChat(item.chatId, displayName)
+    });
+
+    // Cancel option
+    buttons.push({
+      text: 'Cancel',
+      style: 'cancel'
+    });
 
     Alert.alert(
       displayName,
       'Choose an action',
-      [
-        {
-          text: 'Delete Chat',
-          style: 'destructive',
-          onPress: () => handleDeleteChat(item.chatId, displayName)
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        }
-      ]
+      buttons
     );
   };
 

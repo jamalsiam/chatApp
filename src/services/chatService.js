@@ -90,32 +90,14 @@ class ChatService {
 
       await addDoc(collection(db, 'messages'), messageData);
 
-      // Check if receiver had deleted this chat
-      const chatRef = doc(db, 'chats', chatId);
-      const chatDoc = await getDoc(chatRef);
-      const chatData = chatDoc.data();
-      const deletedBy = chatData.deletedBy || [];
-      const deletedForUsers = chatData.deletedForUsers || {};
-
-      // If receiver had deleted the chat, restore it for them (new conversation)
-      const updates = {
+      // Update chat with last message (don't restore deleted chats)
+      await updateDoc(doc(db, 'chats', chatId), {
         lastMessage: message,
         lastMessageTime: serverTimestamp(),
         lastMessageSenderId: senderId,
         lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
-      };
-
-      if (deletedBy.includes(receiverId)) {
-        // Remove receiver from deletedBy array
-        updates.deletedBy = deletedBy.filter(id => id !== receiverId);
-        // Remove receiver from deletedForUsers
-        delete deletedForUsers[receiverId];
-        updates.deletedForUsers = deletedForUsers;
-      }
-
-      // Update chat with last message
-      await updateDoc(chatRef, updates);
+      });
 
       // Send push notification to receiver
       await notificationService.sendMessageNotification(senderId, receiverId, message, chatId);
@@ -266,31 +248,13 @@ class ChatService {
       if (mediaType === 'audio') lastMsgText = '🎤 Voice message';
       if (mediaType === 'document') lastMsgText = '📄 Document';
 
-      // Check if receiver had deleted this chat
-      const chatRef = doc(db, 'chats', chatId);
-      const chatDoc = await getDoc(chatRef);
-      const chatData = chatDoc.data();
-      const deletedBy = chatData.deletedBy || [];
-      const deletedForUsers = chatData.deletedForUsers || {};
-
-      // If receiver had deleted the chat, restore it for them (new conversation)
-      const updates = {
+      await updateDoc(doc(db, 'chats', chatId), {
         lastMessage: lastMsgText,
         lastMessageTime: serverTimestamp(),
         lastMessageSenderId: senderId,
         lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
-      };
-
-      if (deletedBy.includes(receiverId)) {
-        // Remove receiver from deletedBy array
-        updates.deletedBy = deletedBy.filter(id => id !== receiverId);
-        // Remove receiver from deletedForUsers
-        delete deletedForUsers[receiverId];
-        updates.deletedForUsers = deletedForUsers;
-      }
-
-      await updateDoc(chatRef, updates);
+      });
 
       // Send push notification to receiver
       await notificationService.sendMessageNotification(senderId, receiverId, lastMsgText, chatId);
@@ -570,32 +534,14 @@ class ChatService {
 
       await addDoc(collection(db, 'messages'), messageData);
 
-      // Check if receiver had deleted this chat
-      const chatRef = doc(db, 'chats', chatId);
-      const chatDoc = await getDoc(chatRef);
-      const chatData = chatDoc.data();
-      const deletedBy = chatData.deletedBy || [];
-      const deletedForUsers = chatData.deletedForUsers || {};
-
-      // If receiver had deleted the chat, restore it for them (new conversation)
-      const updates = {
+      // Update chat with last message
+      await updateDoc(doc(db, 'chats', chatId), {
         lastMessage: message,
         lastMessageTime: serverTimestamp(),
         lastMessageSenderId: senderId,
         lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
-      };
-
-      if (deletedBy.includes(receiverId)) {
-        // Remove receiver from deletedBy array
-        updates.deletedBy = deletedBy.filter(id => id !== receiverId);
-        // Remove receiver from deletedForUsers
-        delete deletedForUsers[receiverId];
-        updates.deletedForUsers = deletedForUsers;
-      }
-
-      // Update chat with last message
-      await updateDoc(chatRef, updates);
+      });
 
       // Send push notification to receiver
       await notificationService.sendMessageNotification(senderId, receiverId, message, chatId);

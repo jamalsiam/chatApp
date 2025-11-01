@@ -376,20 +376,22 @@ export default function ProfileScreen({ route, navigation }) {
           <Icon name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{profile.displayName}</Text>
-        {isOwnProfile && (
+        {isOwnProfile ? (
           <View style={{ flexDirection: 'row', gap: 15 }}>
-            <TouchableOpacity onPress={() => navigation.navigate('BlockedUsers')}>
-              <Icon name="ban-outline" size={24} color="#6C5CE7" />
+            <TouchableOpacity
+              style={styles.addGalleryButton}
+              onPress={handleAddPhoto}
+            >
+              <Icon name="images" size={18} color="#fff" />
+              <Text style={styles.addGalleryText}>Gallery</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('NotificationSettings')}>
-              <Icon name="settings-outline" size={24} color="#6C5CE7" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleAddPhoto}>
-              <Icon name="add-circle" size={24} color="#6C5CE7" />
+            <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
+              <Icon name="settings-outline" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
+        ) : (
+          <View style={{ width: 24 }} />
         )}
-        {!isOwnProfile && <View style={{ width: 24 }} />}
       </View>
 
       <ScrollView style={styles.scrollView}>
@@ -539,6 +541,20 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#fff',
+  },
+  addGalleryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6C5CE7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 6,
+  },
+  addGalleryText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   scrollView: {
     flex: 1,
