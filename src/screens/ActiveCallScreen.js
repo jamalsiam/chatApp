@@ -232,7 +232,8 @@ export default function ActiveCallScreen({ route, navigation }) {
     console.log('Navigation state changed:', navState.url);
 
     // If navigating away from Jitsi (e.g., Jitsi closed), end call
-    if (!navState.loading && !navState.url.includes('meet.jit.si')) {
+    // Check for 8x8.vc (our current server)
+    if (!navState.loading && !navState.url.includes('8x8.vc')) {
       console.log('Left Jitsi page, ending call...');
       handleEndCall();
     }
