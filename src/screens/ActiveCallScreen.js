@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, View, ActivityIndicator, BackHandler } from 'react-native';
+import { Alert, StyleSheet, Text, View, ActivityIndicator, BackHandler, TouchableOpacity } from 'react-native';
 import { WebView } from 'react-native-webview';
+import Icon from 'react-native-vector-icons/Ionicons';
 import callService from '../services/callService';
 import { createJitsiUrl } from '../config/jitsiConfig';
 
@@ -8,8 +9,10 @@ export default function ActiveCallScreen({ route, navigation }) {
   const { callId, callType, isInitiator, otherUser } = route.params;
   const [duration, setDuration] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEnding, setIsEnding] = useState(false);
   const durationInterval = useRef(null);
   const webViewRef = useRef(null);
+  const hasEndedRef = useRef(false);
 
   // Generate Jitsi Meet room URL
   const displayName = otherUser?.displayName || 'User';
@@ -44,14 +47,40 @@ export default function ActiveCallScreen({ route, navigation }) {
   }, []);
 
   const handleEndCall = async () => {
-    clearInterval(durationInterval.current);
-    await callService.endCall(callId, duration);
+    // Prevent multiple calls to end
+    if (hasEndedRef.current) {
+      console.log('Call already ending, skipping...');
+      return;
+    }
 
-    // Check if we can go back, otherwise navigate to Home
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-    } else {
-      navigation.navigate('Home');
+    hasEndedRef.current = true;
+    setIsEnding(true);
+
+    console.log('Ending call...');
+
+    try {
+      // Stop duration timer
+      clearInterval(durationInterval.current);
+
+      // End call in Firebase
+      await callService.endCall(callId, duration);
+
+      console.log('Call ended, navigating back...');
+
+      // Navigate back to previous screen (chat)
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Home');
+      }
+    } catch (error) {
+      console.error('Error ending call:', error);
+      // Still navigate back even if there's an error
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Home');
+      }
     }
   };
 
@@ -113,39 +142,33 @@ export default function ActiveCallScreen({ route, navigation }) {
     return mins.toString().padStart(2, '0') + ':' + secs.toString().padStart(2, '0');
   };
 
-  // Inject JavaScript to listen for Jitsi events
+  // Simplified injected JavaScript - just forward all Jitsi events
   const injectedJavaScript = `
     (function() {
-      console.log('Jitsi event listener injected');
-
       // Listen for Jitsi IFrame API events
       window.addEventListener('message', function(event) {
         try {
-          const data = event.data;
-
-          // Forward Jitsi events to React Native
-          if (data && typeof data === 'object') {
-            // Send to React Native
-            window.ReactNativeWebView.postMessage(JSON.stringify(data));
-
-            console.log('Jitsi event received:', data.event || data.type);
+          if (event.data && typeof event.data === 'object') {
+            window.ReactNativeWebView.postMessage(JSON.stringify(event.data));
           }
         } catch (error) {
-          console.error('Error handling Jitsi event:', error);
+          console.error('Error forwarding event:', error);
         }
       });
-
-      // Also listen for beforeunload (when page closes)
-      window.addEventListener('beforeunload', function() {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          event: 'readyToClose'
-        }));
-      });
-
-      console.log('Jitsi event listeners ready');
     })();
-    true; // Required for injected JavaScript
+    true;
   `;
+
+  // Handle WebView navigation state changes
+  const handleNavigationStateChange = (navState) => {
+    console.log('Navigation state changed:', navState.url);
+
+    // If navigating away from Jitsi (e.g., Jitsi closed), end call
+    if (!navState.loading && !navState.url.includes('meet.jit.si')) {
+      console.log('Left Jitsi page, ending call...');
+      handleEndCall();
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -162,6 +185,7 @@ export default function ActiveCallScreen({ route, navigation }) {
         injectedJavaScript={injectedJavaScript}
         onMessage={handleWebViewMessage}
         onError={handleWebViewError}
+        onNavigationStateChange={handleNavigationStateChange}
         onLoadEnd={() => setIsLoading(false)}
         renderLoading={() => (
           <View style={styles.loadingContainer}>
@@ -172,13 +196,31 @@ export default function ActiveCallScreen({ route, navigation }) {
         )}
       />
 
-      {/* Minimal top overlay - fades after 3 seconds */}
-      {duration < 5 && (
-        <View style={styles.topOverlay}>
+      {/* Top info bar */}
+      <View style={styles.topBar}>
+        <View style={styles.topBarContent}>
           <Text style={styles.userName}>{otherUser?.displayName || 'Unknown'}</Text>
-          <Text style={styles.statusText}>Joining call...</Text>
+          <Text style={styles.duration}>{formatDuration(duration)}</Text>
         </View>
-      )}
+      </View>
+
+      {/* End Call Button - Always visible and reliable */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={[styles.endCallButton, isEnding && styles.endCallButtonDisabled]}
+          onPress={handleEndCall}
+          disabled={isEnding}
+        >
+          {isEnding ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <>
+              <Icon name="call" size={28} color="#fff" style={styles.endCallIcon} />
+              <Text style={styles.endCallText}>End Call</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -212,16 +254,19 @@ const styles = StyleSheet.create({
     color: '#888',
     marginTop: 10,
   },
-  topOverlay: {
+  topBar: {
     position: 'absolute',
-    top: 50,
+    top: 0,
     left: 0,
     right: 0,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingVertical: 10,
+    paddingTop: 50,
+    paddingBottom: 15,
     paddingHorizontal: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     zIndex: 10,
+  },
+  topBarContent: {
+    alignItems: 'center',
   },
   userName: {
     fontSize: 18,
@@ -229,8 +274,46 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginBottom: 5,
   },
-  statusText: {
+  duration: {
     fontSize: 14,
     color: '#ddd',
+  },
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingVertical: 30,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  endCallButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF4757',
+    paddingVertical: 15,
+    paddingHorizontal: 40,
+    borderRadius: 30,
+    minWidth: 180,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  endCallButtonDisabled: {
+    backgroundColor: '#999',
+  },
+  endCallIcon: {
+    marginRight: 10,
+    transform: [{ rotate: '135deg' }],
+  },
+  endCallText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
   },
 });
