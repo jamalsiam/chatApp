@@ -90,14 +90,30 @@ class ChatService {
 
       await addDoc(collection(db, 'messages'), messageData);
 
-      // Update chat with last message (don't restore deleted chats)
-      await updateDoc(doc(db, 'chats', chatId), {
+      // Check if receiver had deleted this chat - if so, restore it
+      const chatRef = doc(db, 'chats', chatId);
+      const chatDoc = await getDoc(chatRef);
+      const chatData = chatDoc.data();
+      const deletedBy = chatData.deletedBy || [];
+      const deletedForUsers = chatData.deletedForUsers || {};
+
+      const updates = {
         lastMessage: message,
         lastMessageTime: serverTimestamp(),
         lastMessageSenderId: senderId,
         lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
-      });
+      };
+
+      // If receiver had deleted the chat, restore it for them (but they'll only see new messages)
+      if (deletedBy.includes(receiverId)) {
+        // Remove receiver from deletedBy so chat reappears
+        updates.deletedBy = deletedBy.filter(id => id !== receiverId);
+        // Keep deletedForUsers timestamp so old messages stay hidden
+      }
+
+      // Update chat with last message
+      await updateDoc(chatRef, updates);
 
       // Send push notification to receiver
       await notificationService.sendMessageNotification(senderId, receiverId, message, chatId);
@@ -248,13 +264,28 @@ class ChatService {
       if (mediaType === 'audio') lastMsgText = '🎤 Voice message';
       if (mediaType === 'document') lastMsgText = '📄 Document';
 
-      await updateDoc(doc(db, 'chats', chatId), {
+      // Check if receiver had deleted this chat - if so, restore it
+      const chatRef = doc(db, 'chats', chatId);
+      const chatDoc = await getDoc(chatRef);
+      const chatData = chatDoc.data();
+      const deletedBy = chatData.deletedBy || [];
+
+      const updates = {
         lastMessage: lastMsgText,
         lastMessageTime: serverTimestamp(),
         lastMessageSenderId: senderId,
         lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
-      });
+      };
+
+      // If receiver had deleted the chat, restore it for them (but they'll only see new messages)
+      if (deletedBy.includes(receiverId)) {
+        // Remove receiver from deletedBy so chat reappears
+        updates.deletedBy = deletedBy.filter(id => id !== receiverId);
+        // Keep deletedForUsers timestamp so old messages stay hidden
+      }
+
+      await updateDoc(chatRef, updates);
 
       // Send push notification to receiver
       await notificationService.sendMessageNotification(senderId, receiverId, lastMsgText, chatId);
@@ -534,14 +565,29 @@ class ChatService {
 
       await addDoc(collection(db, 'messages'), messageData);
 
-      // Update chat with last message
-      await updateDoc(doc(db, 'chats', chatId), {
+      // Check if receiver had deleted this chat - if so, restore it
+      const chatRef = doc(db, 'chats', chatId);
+      const chatDoc = await getDoc(chatRef);
+      const chatData = chatDoc.data();
+      const deletedBy = chatData.deletedBy || [];
+
+      const updates = {
         lastMessage: message,
         lastMessageTime: serverTimestamp(),
         lastMessageSenderId: senderId,
         lastMessageRead: false,
         [`unreadCount.${receiverId}`]: increment(1)
-      });
+      };
+
+      // If receiver had deleted the chat, restore it for them (but they'll only see new messages)
+      if (deletedBy.includes(receiverId)) {
+        // Remove receiver from deletedBy so chat reappears
+        updates.deletedBy = deletedBy.filter(id => id !== receiverId);
+        // Keep deletedForUsers timestamp so old messages stay hidden
+      }
+
+      // Update chat with last message
+      await updateDoc(chatRef, updates);
 
       // Send push notification to receiver
       await notificationService.sendMessageNotification(senderId, receiverId, message, chatId);
