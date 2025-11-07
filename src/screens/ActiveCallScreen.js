@@ -56,7 +56,10 @@ export default function ActiveCallScreen({ route, navigation }) {
     hasEndedRef.current = true;
     setIsEnding(true);
 
-    console.log('Ending call...');
+    console.log('========================================');
+    console.log('ENDING CALL - Stack trace to see who called this:');
+    console.trace();
+    console.log('========================================');
 
     try {
       // Stop duration timer
@@ -229,14 +232,20 @@ export default function ActiveCallScreen({ route, navigation }) {
 
   // Handle WebView navigation state changes
   const handleNavigationStateChange = (navState) => {
-    console.log('Navigation state changed:', navState.url);
+    console.log('========================================');
+    console.log('Navigation state changed:');
+    console.log('URL:', navState.url);
+    console.log('Loading:', navState.loading);
+    console.log('Title:', navState.title);
+    console.log('========================================');
 
+    // DISABLED FOR DEBUGGING - Let's see all navigation events first
     // If navigating away from Jitsi (e.g., Jitsi closed), end call
     // Check for 8x8.vc (our current server)
-    if (!navState.loading && !navState.url.includes('8x8.vc')) {
-      console.log('Left Jitsi page, ending call...');
-      handleEndCall();
-    }
+    // if (!navState.loading && !navState.url.includes('8x8.vc')) {
+    //   console.log('Left Jitsi page, ending call...');
+    //   handleEndCall();
+    // }
   };
 
   return (
